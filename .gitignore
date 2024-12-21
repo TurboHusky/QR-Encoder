@@ -1,0 +1,4 @@
+# Dev files
+.vscode
+*.ppm
+app
