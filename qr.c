@@ -166,6 +166,23 @@ void qr_free(struct qr_data_t *qr_code)
     qr_code->data = NULL;
 }
 
+void export_test(const char *const name, const int qr_width, const int bit_offset, const uint8_t *const data)
+{
+    FILE *test = fopen(name, "wb");
+
+    fprintf(test, "P6 %d %d 1\n", qr_width, qr_width);
+    for (int r = 0; r < qr_width; r++)
+    {
+        for (int c = 0; c < qr_width; c++)
+        {
+            uint8_t buffer[3];
+            buffer[0] = buffer[1] = buffer[2] = (data[r * qr_width + c] >> bit_offset) & 0x01;
+            fwrite(&buffer, 3, 1, test);
+        }
+    }
+    fclose(test);
+}
+
 void export_as_ppm(const int qr_width, const uint8_t *const data)
 {
     FILE *test_output;
@@ -476,6 +493,37 @@ void align_down(const int column, const struct limits_t limits, struct buffer_t 
         }
         offset += limits.qr_width;
     }
+}
+
+int pattern_score(const int module, uint16_t *const buffer)
+{
+    *buffer <<= 1;
+    *buffer |= module;
+    *buffer &= EVAL_PATTERN_MASK;
+    if ((EVAL_PATTERN_LEFT == *buffer) || (EVAL_PATTERN_RIGHT == *buffer))
+    {
+        return 40;
+    }
+    return 0;
+}
+
+int repeat_score(const int module, int *const last_module, int *const run)
+{
+    int score = 0;
+    if (module == *last_module)
+    {
+        ++*run;
+    }
+    else
+    {
+        if (*run >= 5)
+        {
+            score = *run - 2;
+        }
+        *last_module = module;
+        *run = 1;
+    }
+    return score;
 }
 
 void calculate_error_codes(const int block_count, const int error_word_count, const uint8_t (*const gf256_lookup)[2], const int generator_start, const int generator_end, const uint8_t *const generator, const uint8_t *const input, uint8_t *error_words)
@@ -1173,7 +1221,6 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
     // Mask Evaluation
     // ================================================================
 
-    uint16_t test_buffer[8];
     struct mask_eval_t
     {
         struct
@@ -1181,7 +1228,6 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
             int last_module;
             int length;
         } run;
-        int module_1_total;
         struct
         {
             int pattern;
@@ -1189,68 +1235,27 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
             int block;
             int ratio;
         } score;
+        int module_count;
+        uint16_t pattern_buffer;
     } mask_eval[8];
 
     // Init
     for (int m = 0; m < 8; ++m)
     {
-        test_buffer[m] = (qr_buffer.data[0] >> m) & 1;
-
-        mask_eval[m].run.last_module = test_buffer[m];
-        mask_eval[m].run.length = 1;
-        mask_eval[m].module_1_total = test_buffer[m];
+        mask_eval[m].module_count = 0;
         mask_eval[m].score.pattern = 0;
         mask_eval[m].score.run = 0;
         mask_eval[m].score.block = 0;
         mask_eval[m].score.ratio = 0;
     }
 
-    // First row
-    for (int col = 1; col < qr_width; ++col)
+    // Evaluate rows
+    for (int row = 0; row < qr_width; ++row)
     {
+        // Init
         for (int m = 0; m < 8; ++m)
         {
-            int module = (qr_buffer.data[col] >> m) & 1;
-
-            mask_eval[m].module_1_total += module;
-
-            test_buffer[m] <<= 1;
-            test_buffer[m] |= module;
-            test_buffer[m] &= EVAL_PATTERN_MASK;
-            if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
-            {
-                mask_eval[m].score.pattern += 40;
-            }
-
-            if (module == mask_eval[m].run.last_module)
-            {
-                ++mask_eval[m].run.length;
-            }
-            else
-            {
-                if (mask_eval[m].run.length >= 5)
-                {
-                    mask_eval[m].score.run += mask_eval[m].run.length - 2;
-                }
-                mask_eval[m].run.last_module = module;
-                mask_eval[m].run.length = 1;
-            }
-        }
-    }
-    for (int m = 0; m < 8; ++m)
-    {
-        if (mask_eval[m].run.length >= 5)
-        {
-            mask_eval[m].score.run += mask_eval[m].run.length - 2;
-        }
-    }
-
-    // Rest of image
-    for (int row = 1; row < qr_width; ++row)
-    {
-        for (int m = 0; m < 8; ++m)
-        {
-            test_buffer[m] = 0;
+            mask_eval[m].pattern_buffer = 0;
             mask_eval[m].run.last_module = 0;
             mask_eval[m].run.length = 0;
         }
@@ -1259,134 +1264,47 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
             for (int m = 0; m < 8; ++m)
             {
                 int module = (qr_buffer.data[row * qr_width + col] >> m) & 1;
-
-                mask_eval[m].module_1_total += module;
-
-                test_buffer[m] <<= 1;
-                test_buffer[m] |= module;
-                test_buffer[m] &= EVAL_PATTERN_MASK;
-                if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
-                {
-                    mask_eval[m].score.pattern += 40;
-                }
-
-                if (module == mask_eval[m].run.last_module)
-                {
-                    ++mask_eval[m].run.length;
-                }
-                else
-                {
-                    if (mask_eval[m].run.length >= 5)
-                    {
-                        mask_eval[m].score.run += mask_eval[m].run.length - 2;
-                    }
-                    mask_eval[m].run.last_module = module;
-                    mask_eval[m].run.length = 1;
-                }
+                mask_eval[m].module_count += module;                                                                     // N4
+                mask_eval[m].score.pattern += pattern_score(module, &mask_eval[m].pattern_buffer);                       // N3
+                mask_eval[m].score.run += repeat_score(module, &mask_eval[m].run.last_module, &mask_eval[m].run.length); // N1
             }
         }
         for (int m = 0; m < 8; ++m)
         {
+            // N1 end of line check
             if (mask_eval[m].run.length >= 5)
             {
                 mask_eval[m].score.run += mask_eval[m].run.length - 2;
             }
-            int temp = abs((1000 * mask_eval[m].module_1_total) / (qr_width * qr_width) - 500) / 50;
-            mask_eval[m].score.ratio = temp * 10;
         }
     }
 
-    // Init
-    for (int m = 0; m < 8; ++m)
+    // Evaluate columns
+    for (int col = 0; col < qr_width; ++col)
     {
-        test_buffer[m] = (qr_buffer.data[0] >> m) & 1;
-        mask_eval[m].run.last_module = test_buffer[m];
-        mask_eval[m].run.length = 1;
-    }
-
-    // First column
-    for (int row = 1; row < qr_width; ++row)
-    {
+        // Init
+        uint8_t a = 0xff;
+        uint8_t b = ~a;
         for (int m = 0; m < 8; ++m)
         {
-            int module = (qr_buffer.data[row * qr_width] >> m) & 1;
-
-            test_buffer[m] <<= 1;
-            test_buffer[m] |= module;
-            test_buffer[m] &= EVAL_PATTERN_MASK;
-            if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
-            {
-                mask_eval[m].score.pattern += 40;
-            }
-
-            if (module == mask_eval[m].run.last_module)
-            {
-                ++mask_eval[m].run.length;
-            }
-            else
-            {
-                if (mask_eval[m].run.length >= 5)
-                {
-                    mask_eval[m].score.run += mask_eval[m].run.length - 2;
-                }
-                mask_eval[m].run.last_module = module;
-                mask_eval[m].run.length = 1;
-            }
+            mask_eval[m].pattern_buffer = 0;
+            mask_eval[m].run.last_module = 0;
+            mask_eval[m].run.length = 0;
         }
-    }
-    for (int m = 0; m < 8; ++m)
-    {
-        if (mask_eval[m].run.length >= 5)
+        for (int row = 0; row < qr_width; ++row)
         {
-            mask_eval[m].score.run += mask_eval[m].run.length - 2;
-        }
-    }
-
-    // Rest of image
-    for (int col = 1; col < qr_width; ++col)
-    {
-        int a = qr_buffer.data[col - 1];
-        int b = qr_buffer.data[col];
-        for (int m = 0; m < 8; ++m)
-        {
-            test_buffer[m] = (b >> m) & 1;
-            mask_eval[m].run.last_module = test_buffer[m];
-            mask_eval[m].run.length = 1;
-        }
-        for (int row = 1; row < qr_width; ++row)
-        {
-            int c = qr_buffer.data[row * qr_width + col - 1];
-            int d = qr_buffer.data[row * qr_width + col];
+            uint8_t c = (0 == col) ? ~a : qr_buffer.data[row * qr_width + col - 1];
+            uint8_t d = qr_buffer.data[row * qr_width + col];
             for (int m = 0; m < 8; ++m)
             {
                 int module = (d >> m) & 1;
-
-                test_buffer[m] <<= 1;
-                test_buffer[m] |= module;
-                test_buffer[m] &= EVAL_PATTERN_MASK;
-                if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
-                {
-                    mask_eval[m].score.pattern += 40;
-                }
-
-                if (module == mask_eval[m].run.last_module)
-                {
-                    ++mask_eval[m].run.length;
-                }
-                else
-                {
-                    if (mask_eval[m].run.length >= 5)
-                    {
-                        mask_eval[m].score.run += mask_eval[m].run.length - 2;
-                    }
-                    mask_eval[m].run.last_module = module;
-                    mask_eval[m].run.length = 1;
-                }
+                mask_eval[m].score.pattern += pattern_score(module, &mask_eval[m].pattern_buffer);                       // N3
+                mask_eval[m].score.run += repeat_score(module, &mask_eval[m].run.last_module, &mask_eval[m].run.length); // N1
 
                 int module_a = (a >> m) & 1;
                 int module_b = (b >> m) & 1;
                 int module_c = (c >> m) & 1;
-                if (module == module_c && module_c == module_b && module_b == module_a)
+                if (module == module_c && module_c == module_b && module_b == module_a) // N2
                 {
                     mask_eval[m].score.block += 3;
                 }
@@ -1396,6 +1314,7 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
         }
         for (int m = 0; m < 8; ++m)
         {
+            // N1 end of line check
             if (mask_eval[m].run.length >= 5)
             {
                 mask_eval[m].score.run += mask_eval[m].run.length - 2;
@@ -1403,20 +1322,27 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
         }
     }
 
+    for (int m = 0; m < 8; ++m)
+    {
+        // N4 final score
+        int temp = abs((1000 * mask_eval[m].module_count) / (qr_width * qr_width) - 500) / 50;
+        mask_eval[m].score.ratio = temp * 10;
+    }
+
     int mask_score = mask_eval[0].score.block + mask_eval[0].score.pattern + mask_eval[0].score.ratio + mask_eval[0].score.run;
+    printf("Mask 0: %d (%d %d %d %d)\n", mask_score, mask_eval[0].score.run, mask_eval[0].score.block, mask_eval[0].score.pattern, mask_eval[0].score.ratio);
     uint8_t mask_pattern_index = 0;
-    printf("Mask 0: %d (%d %d %d %d)\n", mask_score, mask_eval[0].score.block, mask_eval[0].score.pattern, mask_eval[0].score.run, mask_eval[0].score.ratio);
     for (int i = 1; i < 8; ++i)
     {
         int score = mask_eval[i].score.block + mask_eval[i].score.pattern + mask_eval[i].score.ratio + mask_eval[i].score.run;
+        printf("Mask %01x: %d (%d %d %d %d)\n", i, score, mask_eval[i].score.run, mask_eval[i].score.block, mask_eval[i].score.pattern, mask_eval[i].score.ratio);
         if (score < mask_score)
         {
             mask_score = score;
             mask_pattern_index = i;
         }
-        printf("Mask %01x: %d (%d %d %d %d)\n", i, score, mask_eval[i].score.block, mask_eval[i].score.pattern, mask_eval[i].score.run, mask_eval[i].score.ratio);
     }
-    printf("Mask: %u %d\n", mask_pattern_index, mask_score);
+    printf("Mask: %u (%d)\n", mask_pattern_index, mask_score);
 
     // ================================================================
     // Format
