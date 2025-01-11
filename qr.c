@@ -4,7 +4,11 @@
 #include <stdint.h>
 #include <math.h>
 
+#define VERSION_OFFSET 1
+#define VERSION_UNDEFINED -1
+#define VERSION_MIN 0
 #define VERSION_MAX 39
+#define VERSION_MODULE_TOTAL 36
 #define GF256_LOG_INDEX 0
 #define GF256_ANTILOG_INDEX 1
 
@@ -14,6 +18,7 @@
 #define GROUP_2_BLOCK_COUNT 3
 #define GROUP_2_BLOCK_SIZE 4
 
+#define ALIGNMENT_POSITIONS_MAX 7
 #define ALIGNMENT_PATTERN_OFFSET 2
 #define TIMING_ROW 6
 
@@ -25,6 +30,27 @@
 #define MICRO_QR_FORMAT_MASK 0X4445
 #define BCH_GENERATOR 0x0537
 #define GOLAY_GENERATOR 0x1f25
+
+#define BLOCK_TYPE_BIT_COUNT 4
+#define CHAR_COUNT_LOW_LIMIT 9
+#define CHAR_COUNT_UPPER_LIMIT 26
+
+enum error_correction_level_t
+{
+    err_L = 0x01, //  7%
+    err_M = 0x00, // 15%
+    err_Q = 0x03, // 25%
+    err_H = 0x02  // 30%
+};
+
+struct qr_data_t
+{
+    enum error_correction_level_t err_level;
+    int version;
+    int width;
+    int mask;
+    uint8_t *data;
+};
 
 enum encoding_mode_t
 {
@@ -86,7 +112,7 @@ const int error_blocks[40][4][5] = {
 const char alphanumeric_lookup[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    36, 0, 0, 0, 37, 38, 0, 0, 0, 0, 39, 40, 0, 41, 46, 47,
+    36, 0, 0, 0, 37, 38, 0, 0, 0, 0, 39, 40, 0, 41, 42, 43,
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 44, 0, 0, 0, 0, 0,
     0, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 0, 0, 0, 0, 0,
@@ -134,6 +160,51 @@ uint8_t read_bit_stream(struct buffer_t *const buffer)
     return ~(result * 0xff);
 }
 
+void qr_free(struct qr_data_t *qr_code)
+{
+    free(qr_code->data);
+    qr_code->data = NULL;
+}
+
+void export_as_ppm(const int qr_width, const uint8_t *const data)
+{
+    FILE *test_output;
+    test_output = fopen("qr.ppm", "wb");
+    int quiet = 4;
+    fprintf(test_output, "P6 %d %d 1\n", qr_width + (2 * quiet), qr_width + (2 * quiet));
+    uint8_t buffer[3] = {0x01, 0x01, 0x01};
+
+    int bit_idx = 7;
+    int byte_idx = 0;
+
+    for (int i = 0; i < (quiet * (qr_width + 9)); ++i)
+    {
+        fwrite(&buffer, sizeof(buffer), 1, test_output);
+    }
+    for (int r = 0; r < qr_width; r++)
+    {
+        for (int c = 0; c < qr_width; c++)
+        {
+            if (bit_idx < 0)
+            {
+                bit_idx = 7;
+                ++byte_idx;
+            }
+            buffer[0] = buffer[1] = buffer[2] = (data[byte_idx] >> bit_idx) & 0x01;
+            fwrite(&buffer, 3, 1, test_output);
+            --bit_idx;
+        }
+        buffer[0] = buffer[1] = buffer[2] = 0x01;
+        for (int i = 0; i < (2 * quiet); ++i)
+            fwrite(&buffer, sizeof(buffer), 1, test_output);
+    }
+    for (int i = 0; i < (quiet * (qr_width + 7)); ++i)
+    {
+        fwrite(&buffer, sizeof(buffer), 1, test_output);
+    }
+    fclose(test_output);
+}
+
 // output:  10 bits for 3 digits
 //           7 bits for 2
 //           4 bits for 1
@@ -147,7 +218,7 @@ void encode_numeric(const struct buffer_t input, struct buffer_t *const output)
         uint8_t b = input.data[index + 1];
         uint8_t c = input.data[index + 2];
 
-        int bits = (a == '0') ? (b == '0') ? 4 : 7 : 10;
+        int bits = ('0' == a) ? ('0' == b) ? 4 : 7 : 10;
         uint16_t encoded = (a - '0') * 100 + (b - '0') * 10 + (c - '0');
 
         printf("%c %c %c -> %04x %u bits\n", a, b, c, encoded, bits);
@@ -212,7 +283,7 @@ uint16_t encode_kanji(const char a, const char b)
 
 int compute_alignment_positions(const int version, int *const coords) // version 1-40
 {
-    if (version <= 1)
+    if (version <= VERSION_MIN + VERSION_OFFSET)
     {
         return 0;
     }
@@ -221,14 +292,13 @@ int compute_alignment_positions(const int version, int *const coords) // version
     int step = (int)(lround((double)distance / (double)intervals)); // Round equal spacing to nearest integer
     step += step & 1;                                               // Round step to next even number
     coords[0] = 6;                                                  // First coordinate is always 6 (can't be calculated with step)
-    for (int i = 1; i <= intervals; i++)
+    for (int i = 1; i <= intervals; ++i)
     {
         coords[i] = 6 + distance - step * (intervals - i); // Start right/bottom and go left/up by step*k
     }
     return intervals + 1;
 }
 
-#define VERSION_DATA_SIZE 36
 int qr_size(const int version, const int alignment_pattern_count) // version 1-40
 {
     int N = 17 + version * 4;             // QR width
@@ -239,15 +309,12 @@ int qr_size(const int version, const int alignment_pattern_count) // version 1-4
     }
     if (version > 6)
     {
-        free_modules -= VERSION_DATA_SIZE;
+        free_modules -= VERSION_MODULE_TOTAL;
     }
     // printf("%d: %lu bits\n", version, free_modules);
     return free_modules;
 }
 
-#define BLOCK_TYPE_BIT_COUNT 4
-#define CHAR_COUNT_LOWER_LIMIT 9
-#define CHAR_COUNT_UPPER_LIMIT 26
 int calculate_capacity(const int version, const int correction_level, const enum encoding_mode_t mode)
 {
     const int *block_data = error_blocks[version][correction_level];
@@ -260,8 +327,8 @@ int calculate_capacity(const int version, const int correction_level, const enum
     switch (mode)
     {
     case enc_numeric:
-        length_bits = (version < CHAR_COUNT_LOWER_LIMIT) ? 10 : (version < CHAR_COUNT_UPPER_LIMIT) ? 12
-                                                                                                   : 14;
+        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 10 : (version < CHAR_COUNT_UPPER_LIMIT) ? 12
+                                                                                                 : 14;
         data_bits -= length_bits;
         char_count = (data_bits / 10) * 3;
         remainder = data_bits % 10;
@@ -275,21 +342,21 @@ int calculate_capacity(const int version, const int correction_level, const enum
         }
         break;
     case enc_alpha_numeric:
-        length_bits = (version < CHAR_COUNT_LOWER_LIMIT) ? 9 : (version < CHAR_COUNT_UPPER_LIMIT) ? 11
-                                                                                                  : 13;
+        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 9 : (version < CHAR_COUNT_UPPER_LIMIT) ? 11
+                                                                                                : 13;
         data_bits -= length_bits;
         remainder = data_bits % 11;
         char_count = (data_bits / 11) * 2;
         char_count += (remainder >= 6) ? 1 : 0;
         break;
     case enc_byte:
-        length_bits = (version < CHAR_COUNT_LOWER_LIMIT) ? 8 : 16;
+        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : 16;
         data_bits -= length_bits;
         char_count = data_bits >> 3;
         break;
     case enc_kanji:
-        length_bits = (version < CHAR_COUNT_LOWER_LIMIT) ? 8 : (version < CHAR_COUNT_UPPER_LIMIT) ? 10
-                                                                                                  : 12;
+        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : (version < CHAR_COUNT_UPPER_LIMIT) ? 10
+                                                                                                : 12;
         data_bits -= length_bits;
         char_count = data_bits / 13;
         break;
@@ -380,7 +447,8 @@ void align_down(const int column, const struct limits_t limits, struct buffer_t 
 {
     int offset = (limits.row_min * limits.qr_width) + column;
     int alignment_row_index = limits.align_index_min;
-    while (limits.row_min > limits.alignment_positions[alignment_row_index] + ALIGNMENT_PATTERN_OFFSET && alignment_row_index <= limits.align_index_max)
+
+    while (alignment_row_index <= limits.align_index_max && limits.row_min > limits.alignment_positions[alignment_row_index] + ALIGNMENT_PATTERN_OFFSET)
     {
         ++alignment_row_index;
     }
@@ -451,44 +519,112 @@ void calculate_error_codes(const int block_count, const int error_word_count, co
     printf("\n");
 }
 
-int main(int argc, char **argv)
+int parse_version(const char *const input)
 {
-    if (argc < 3)
+    size_t input_size = strlen(input);
+    if (1 == input_size && input[0] >= '0' && input[0] <= '9')
     {
-        printf("Missing input\n");
+        return input[0] - '0';
+    }
+    else if (2 == input_size && input[0] >= '0' && input[0] <= '9' && input[1] >= '0' && input[1] <= '9')
+    {
+        return 10 * (input[0] - '0') + input[1] - '0';
+    }
+    return VERSION_UNDEFINED;
+}
+
+struct user_params_t
+{
+    int version;
+    enum error_correction_level_t correction_level;
+};
+
+int parse_qr_input(const int argc, const char *const *const argv, struct user_params_t *user_settings)
+{
+    user_settings->version = VERSION_UNDEFINED;
+    user_settings->correction_level = err_M;
+
+    if (argc < 2)
+    {
+        printf("No input data provided\n");
         return EXIT_FAILURE;
     }
-    struct buffer_t input;
-    input.data = (uint8_t *)argv[2];
-    input.size = strlen((char *)input.data);
-    // char *data = argv[1];
-    // size_t size = strlen(data);
 
-    enum error_correction_level_t
+    for (int i = 1; i < argc; ++i)
     {
-        err_L = 0x01, //  7%
-        err_M = 0x00, // 15%
-        err_Q = 0x03, // 25%
-        err_H = 0x02  // 30%
-    } correction_level = err_Q;
+        if ('-' == argv[i][0])
+        {
+            size_t arg_size = strlen(argv[i]);
+            if (1 == arg_size)
+            {
+                printf("Invalid argument\n");
+                return EXIT_FAILURE;
+            }
+            if (3 == arg_size && 0 == strncmp(argv[i], "--h", 3) || 6 == arg_size && 0 == strncmp(argv[i], "--help", 6))
+            {
+                printf("Usage: qr [-v] [-lLmMqQhH] [-h | --help] SOURCE\n\n\t--h,--help\tPrint help\n\t-v\t\tSet version 1-40\n\t-l,-L\t\terror correction 7%%\n\t-m,-M\t\terror correction 15%%\n\t-q,-Q\t\terror correction 25%%\n\t-h,-H\t\terror correction 30%%\n");
+                return EXIT_FAILURE;
+            }
 
-    switch (*argv[1])
-    {
-    case 'l':
-    case 'L':
-        correction_level = err_L;
-        break;
-    case 'm':
-    case 'M':
-        correction_level = err_M;
-        break;
-    case 'h':
-    case 'H':
-        correction_level = err_H;
-        break;
-    default:
-        break;
+            switch (argv[i][1])
+            {
+            case 'v':
+                if (2 == arg_size)
+                {
+                    ++i;
+                    if (i >= argc - 1)
+                    {
+                        printf("Missing version argument\n");
+                        return EXIT_FAILURE;
+                    }
+                    user_settings->version = parse_version(argv[i]);
+                }
+                else
+                {
+                    user_settings->version = parse_version(argv[i] + 3);
+                }
+                if (user_settings->version < (VERSION_MIN + VERSION_OFFSET) || user_settings->version > (VERSION_MAX + VERSION_OFFSET))
+                {
+                    printf("Invalid version\n");
+                    return EXIT_FAILURE;
+                }
+                break;
+            case 'l':
+            case 'L':
+                user_settings->correction_level = err_L;
+                break;
+            case 'm':
+            case 'M':
+                break;
+            case 'q':
+            case 'Q':
+                user_settings->correction_level = err_Q;
+                break;
+            case 'h':
+            case 'H':
+                user_settings->correction_level = err_H;
+                break;
+            default:
+                printf("Invalid option\n");
+                return EXIT_FAILURE;
+                break;
+            }
+        }
+        else if (i != argc - 1)
+        {
+            printf("Unrecognised input option\n");
+            return EXIT_FAILURE;
+        }
     }
+    return EXIT_SUCCESS;
+}
+
+struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_level_t correction_level, const char *const data)
+{
+    struct buffer_t input;
+    input.size = strlen(data);
+    input.data = (uint8_t *)data;
+
     // ================================================================
     // Check input data type and QR version
     // ================================================================
@@ -540,7 +676,7 @@ int main(int argc, char **argv)
         {
             // Kanji is always 2 bytes?
             mode = enc_unsupported;
-            return EXIT_FAILURE;
+            return NULL;
         }
         else
         {
@@ -552,7 +688,7 @@ int main(int argc, char **argv)
                 {
                     mode = enc_unsupported;
                     printf("Unsupported data type");
-                    return EXIT_FAILURE;
+                    return NULL;
                 }
             }
         }
@@ -569,38 +705,52 @@ int main(int argc, char **argv)
     // Alignment (n x n - 3) x 25               Versions 2+
     // Timing (W + H - 32) - ((n - 2) x 2) x 5
 
-    int version = VERSION_MAX;
-    int input_capacity = calculate_capacity(version, (int)correction_level, mode);
+    int version;
+    int input_capacity;
+    if (VERSION_UNDEFINED == qr_version)
+    {
+        version = VERSION_MAX;
+        input_capacity = calculate_capacity(version, (int)correction_level, mode);
+
+        // Get smallest compatible version
+        while (version > 0)
+        {
+            int next_lowest_capacity = calculate_capacity(version - 1, (int)correction_level, mode);
+            if (input.size > (size_t)next_lowest_capacity)
+            {
+                break;
+            }
+            input_capacity = next_lowest_capacity;
+            --version;
+        }
+    }
+    else if (qr_version < (VERSION_MIN + VERSION_OFFSET) || qr_version > (VERSION_MAX + VERSION_OFFSET))
+    {
+        printf("Invalid QR version specified\n");
+        return NULL;
+    }
+    else
+    {
+        version = qr_version - VERSION_OFFSET;
+        input_capacity = calculate_capacity(version, (int)correction_level, mode);
+    }
     if (input.size > (size_t)input_capacity)
     {
-        printf("Data exceeds QR code capacity");
-        return EXIT_FAILURE;
-    }
-
-    // Get smallest compatible version
-    while (version > 0)
-    {
-        int next_lowest_capacity = calculate_capacity(version - 1, (int)correction_level, mode);
-        if (input.size > (size_t)next_lowest_capacity)
-        {
-            break;
-        }
-        input_capacity = next_lowest_capacity;
-        --version;
+        printf("Data exceeds QR code capacity\n");
+        return NULL;
     }
 
     int qr_width = 21 + (version << 2);
     int module_total = qr_width * qr_width;
-    int alignment_positions[7];
-    const int n = compute_alignment_positions(version + 1, alignment_positions);
+    int alignment_positions[ALIGNMENT_POSITIONS_MAX];
+    const int n = compute_alignment_positions(version + VERSION_OFFSET, alignment_positions);
     const int(*block_data)[5] = &error_blocks[version][correction_level];
     const size_t data_bytes = (size_t)((*block_data)[GROUP_1_BLOCK_COUNT] * (*block_data)[GROUP_1_BLOCK_SIZE] + (*block_data)[GROUP_2_BLOCK_COUNT] * (*block_data)[GROUP_2_BLOCK_SIZE]);
     const size_t error_bytes = (size_t)((*block_data)[ERR_WORDS_PER_BLOCK] * ((*block_data)[GROUP_1_BLOCK_COUNT] + (*block_data)[GROUP_2_BLOCK_COUNT]));
 
-    printf("%ld input chars, Version: %d (%dx%d), modules: %d, correction level: %d, mode: %d, capacity: %d\n", input.size, version + 1, qr_width, qr_width, qr_size(version + 1, n), correction_level, mode, input_capacity);
+    char correction_map[] = {'M', 'L', 'H', 'Q'};
+    printf("%ld input chars, Version: %d (%dx%d), modules: %d, correction level: %c, mode: %d, capacity: %d\n", input.size, version + VERSION_OFFSET, qr_width, qr_width, qr_size(version + 1, n), correction_map[correction_level], mode, input_capacity);
     printf("%ld data words, %ld error words\n", data_bytes, error_bytes);
-    struct buffer_t encoded = {.bit_index = 0, .byte_index = 0, .size = data_bytes + error_bytes};
-    encoded.data = calloc(encoded.size, sizeof(*encoded.data));
 
     // ================================================================
     // Format input data
@@ -619,24 +769,34 @@ int main(int argc, char **argv)
     //		- Char count
     //		- Data bit stream
 
+    uint16_t char_count = 0;
+    switch (mode)
+    {
+    case enc_numeric:
+        char_count = (version < CHAR_COUNT_LOW_LIMIT) ? 10 : (version < CHAR_COUNT_UPPER_LIMIT) ? 12
+                                                                                                : 14;
+        break;
+    case enc_alpha_numeric:
+        char_count = (version < CHAR_COUNT_LOW_LIMIT) ? 9 : (version < CHAR_COUNT_UPPER_LIMIT) ? 11
+                                                                                               : 13;
+        break;
+    case enc_byte:
+        char_count = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : 16;
+        break;
+    case enc_kanji:
+        char_count = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : (version < CHAR_COUNT_UPPER_LIMIT) ? 10
+                                                                                               : 12;
+        break;
+    default:
+        printf("Unexpected encoding mode encountered\n");
+        return NULL;
+        break;
+    }
+
+    struct buffer_t encoded = {.bit_index = 0, .byte_index = 0, .size = data_bytes + error_bytes};
+    encoded.data = calloc(encoded.size, sizeof(*encoded.data));
     // 4 bit mode
     add_to_buffer(mode_indicators[mode], 4, &encoded);
-    uint16_t char_count;
-    if (version < CHAR_COUNT_LOWER_LIMIT)
-    {
-        uint16_t size_bits[4] = {10, 9, 8, 8};
-        char_count = size_bits[mode];
-    }
-    else if (version < CHAR_COUNT_UPPER_LIMIT)
-    {
-        uint16_t size_bits[4] = {12, 11, 16, 10};
-        char_count = size_bits[mode];
-    }
-    else
-    {
-        uint16_t size_bits[4] = {14, 13, 16, 12};
-        char_count = size_bits[mode];
-    }
     // N bit character count
     add_to_buffer((uint16_t)input.size, char_count, &encoded);
 
@@ -697,6 +857,7 @@ int main(int argc, char **argv)
     // Generate lookup tables
     uint8_t gf256_lookup[256][2];
     uint16_t gf256_base = 1;
+    gf256_lookup[0][1] = 0; // No exponent exists for zero value coefficient
     for (int i = 0; i < 256; ++i)
     {
         gf256_lookup[i][0] = (uint8_t)gf256_base;
@@ -785,7 +946,7 @@ int main(int argc, char **argv)
         .bit_index = 0,
         .byte_index = 0,
         .size = (qr_size(version + 1, n) + 0x07) >> 3};
-    interleaved.data = malloc(interleaved.size);
+    interleaved.data = calloc(interleaved.size, sizeof(uint8_t));
     int line_index = 0;
     printf("Interleaved data: ");
     while (line_index < (*block_data)[GROUP_1_BLOCK_SIZE] || line_index < (*block_data)[GROUP_2_BLOCK_SIZE])
@@ -824,9 +985,8 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    struct buffer_t image = {.bit_index = 0, .byte_index = 0, .size = module_total};
-    image.data = malloc(image.size);
-    uint8_t *output_buff = image.data;
+    struct buffer_t qr_buffer = {.bit_index = 0, .byte_index = 0, .size = module_total};
+    qr_buffer.data = malloc(qr_buffer.size);
 
     // Alignment Patterns
     const uint8_t alignment_pattern[5] = {0xe0, 0xee, 0xea, 0xee, 0xe0};
@@ -836,14 +996,14 @@ int main(int argc, char **argv)
         {
             for (int b = 0; b < n; ++b)
             {
-                if (((a == n - 1) && b == 0) || (a == 0) && ((b == 0) || (b == n - 1)))
+                if (((a == n - 1) && 0 == b) || (0 == a) && ((0 == b) || (b == n - 1)))
                 {
                     continue;
                 }
                 int alignment_offset = qr_width * (alignment_positions[a] + i - 2) + alignment_positions[b] - 2;
                 for (int j = 0; j < 5; ++j)
                 {
-                    output_buff[alignment_offset] = ((alignment_pattern[i] >> j) & 1) * 0xff;
+                    qr_buffer.data[alignment_offset] = ((alignment_pattern[i] >> j) & 1) * 0xff;
                     ++alignment_offset;
                 }
             }
@@ -857,38 +1017,38 @@ int main(int argc, char **argv)
         int finder_index = i * qr_width;
         for (int j = 0; j < 7; ++j)
         {
-            output_buff[finder_index + j] = ((finder_pattern[i] >> j) & 1) * 0xff;
+            qr_buffer.data[finder_index + j] = ((finder_pattern[i] >> j) & 1) * 0xff;
         }
-        output_buff[finder_index + 7] = 0xff;
+        qr_buffer.data[finder_index + 7] = 0xff;
     }
     for (int i = 0; i < 8; ++i)
     {
-        output_buff[qr_width * (i + 1) - 8] = 0xff;
-        memcpy(output_buff + qr_width * (i + 1) - 7, output_buff + qr_width * i, 7);
+        qr_buffer.data[qr_width * (i + 1) - 8] = 0xff;
+        memcpy(qr_buffer.data + qr_width * (i + 1) - 7, qr_buffer.data + qr_width * i, 7);
     }
-    memcpy(output_buff + qr_width * (qr_width - 8), output_buff + qr_width * 7, 8);
+    memcpy(qr_buffer.data + qr_width * (qr_width - 8), qr_buffer.data + qr_width * 7, 8);
     for (int i = 0; i < 7; ++i)
     {
-        memcpy(output_buff + qr_width * (qr_width - 7 + i), output_buff + qr_width * i, 8);
+        memcpy(qr_buffer.data + qr_width * (qr_width - 7 + i), qr_buffer.data + qr_width * i, 8);
     }
 
     // Format and version areas
     for (int i = 0; i < 9; ++i)
     {
-        output_buff[qr_width * 8 + i] = 0xff;
-        output_buff[qr_width * 9 - 1 -i] = 0xff;
-        output_buff[8 + i * qr_width] = 0xff;
-        output_buff[8 + (qr_width - 1) * qr_width - (i * qr_width)] = 0xff;
+        qr_buffer.data[qr_width * 8 + i] = 0xff;
+        qr_buffer.data[qr_width * 9 - 1 - i] = 0xff;
+        qr_buffer.data[8 + i * qr_width] = 0xff;
+        qr_buffer.data[8 + (qr_width - 1) * qr_width - (i * qr_width)] = 0xff;
     }
-    output_buff[qr_width * 8 + 9] = 0xff;
+    qr_buffer.data[qr_width * 8 + 9] = 0xff;
     if (version > 5)
     {
         for (int i = 0; i < 6; ++i)
         {
             for (int j = 0; j < 3; ++j)
             {
-                output_buff[(qr_width * (i + 1)) - 11 + j] = 0x00; // RHS top
-                output_buff[(qr_width * (qr_width - 11 + j)) + i] = 0x00; // LHS bottom
+                qr_buffer.data[(qr_width * (i + 1)) - 11 + j] = 0x00;        // RHS top
+                qr_buffer.data[(qr_width * (qr_width - 11 + j)) + i] = 0x00; // LHS bottom
             }
         }
     }
@@ -897,13 +1057,12 @@ int main(int argc, char **argv)
     for (int i = 8; i < qr_width - 8; ++i)
     {
         int unmasked_offset = qr_width * 6;
-        output_buff[unmasked_offset + i] = (i & 1) * 0xff;
+        qr_buffer.data[unmasked_offset + i] = (i & 1) * 0xff;
     }
     for (int i = 8; i < qr_width - 8; ++i)
     {
-        output_buff[i * qr_width + 6] = (i & 1) * 0xff;
+        qr_buffer.data[i * qr_width + 6] = (i & 1) * 0xff;
     }
-
 
     // ================================================================
     // Fill
@@ -939,22 +1098,22 @@ int main(int argc, char **argv)
         .align_index_max = n - 1,
         .alignment_positions = alignment_positions};
 
-    fill_up(column, limits, &interleaved, masks, output_buff);
+    fill_up(column, limits, &interleaved, masks, qr_buffer.data);
     column -= 2;
-    fill_down(column, limits, &interleaved, masks, output_buff);
+    fill_down(column, limits, &interleaved, masks, qr_buffer.data);
     column -= 2;
-    align_up(column, limits, &interleaved, masks, output_buff);
+    align_up(column, limits, &interleaved, masks, qr_buffer.data);
     column -= 2;
-    align_down(column, limits, &interleaved, masks, output_buff);
+    align_down(column, limits, &interleaved, masks, qr_buffer.data);
     column -= 2;
     limits.row_min = 7;
-    align_up(column, limits, &interleaved, masks, output_buff);
+    align_up(column, limits, &interleaved, masks, qr_buffer.data);
     if (version < 6)
     {
         limits.row_min = 0;
         limits.row_max = 5;
-        fill_up(column, limits, &interleaved, masks, output_buff);
-        fill_down(column - 2, limits, &interleaved, masks, output_buff);
+        fill_up(column, limits, &interleaved, masks, qr_buffer.data);
+        fill_down(column - 2, limits, &interleaved, masks, qr_buffer.data);
     }
     else // skip version block
     {
@@ -962,7 +1121,7 @@ int main(int argc, char **argv)
         for (int row = 0; row < 6; ++row)
         {
             int offset = col + row * qr_width;
-            output_buff[offset] = read_bit_stream(&interleaved) ^ masks[row % 12][col % 12];
+            qr_buffer.data[offset] = read_bit_stream(&interleaved) ^ masks[row % 12][col % 12];
         }
     }
 
@@ -970,7 +1129,7 @@ int main(int argc, char **argv)
     limits.row_min = 7;
     limits.row_max = qr_width - 1;
     column -= 2;
-    fill_down(column, limits, &interleaved, masks, output_buff);
+    fill_down(column, limits, &interleaved, masks, qr_buffer.data);
 
     typedef void (*fill_function_t)(const int, const struct limits_t, struct buffer_t *const, const uint8_t[12][12], uint8_t *const);
     fill_function_t regular_fills[2] = {fill_down, fill_up};
@@ -987,11 +1146,11 @@ int main(int argc, char **argv)
         }
         if (column <= alignment_positions[limits.align_col_index] + ALIGNMENT_PATTERN_OFFSET)
         {
-            aligned_fills[fill_direction](column, limits, &interleaved, masks, output_buff);
+            aligned_fills[fill_direction](column, limits, &interleaved, masks, qr_buffer.data);
         }
         else
         {
-            regular_fills[fill_direction](column, limits, &interleaved, masks, output_buff);
+            regular_fills[fill_direction](column, limits, &interleaved, masks, qr_buffer.data);
         }
         fill_direction ^= 1;
         column -= 2;
@@ -1001,40 +1160,14 @@ int main(int argc, char **argv)
     limits.row_min = 9;
     limits.align_index_min = 1;
     limits.align_index_max = n - 2;
-    align_up(8, limits, &interleaved, masks, output_buff);
+    align_up(8, limits, &interleaved, masks, qr_buffer.data);
     if (version >= 6)
     {
         limits.row_max -= 3;
     }
-    align_down(5, limits, &interleaved, masks, output_buff);
-    fill_up(3, limits, &interleaved, masks, output_buff);
-    fill_down(1, limits, &interleaved, masks, output_buff);
-
-
-    FILE *m_name[8];
-    m_name[0] = fopen("mask0.ppm", "wb");
-    m_name[1] = fopen("mask1.ppm", "wb");
-    m_name[2] = fopen("mask2.ppm", "wb");
-    m_name[3] = fopen("mask3.ppm", "wb");
-    m_name[4] = fopen("mask4.ppm", "wb");
-    m_name[5] = fopen("mask5.ppm", "wb");
-    m_name[6] = fopen("mask6.ppm", "wb");
-    m_name[7] = fopen("mask7.ppm", "wb");
-    for (int i = 0; i < 8; ++i)
-    {
-        fprintf(m_name[i], "P6\n%d %d\n1\n", qr_width, qr_width);
-        for (int r = 0; r < qr_width; r++)
-        {
-            for (int c = 0; c < qr_width; c++)
-            {
-                uint8_t buffer[3];
-                buffer[0] = buffer[1] = buffer[2] = (output_buff[c + r * qr_width] >> i) & 0x01;
-                fwrite(&buffer, 3, 1, m_name[i]);
-            }
-        }
-        fclose(m_name[i]);
-    }
-
+    align_down(5, limits, &interleaved, masks, qr_buffer.data);
+    fill_up(3, limits, &interleaved, masks, qr_buffer.data);
+    fill_down(1, limits, &interleaved, masks, qr_buffer.data);
 
     // ================================================================
     // Mask Evaluation
@@ -1061,7 +1194,7 @@ int main(int argc, char **argv)
     // Init
     for (int m = 0; m < 8; ++m)
     {
-        test_buffer[m] = (output_buff[0] >> m) & 1;
+        test_buffer[m] = (qr_buffer.data[0] >> m) & 1;
 
         mask_eval[m].run.last_module = test_buffer[m];
         mask_eval[m].run.length = 1;
@@ -1077,14 +1210,14 @@ int main(int argc, char **argv)
     {
         for (int m = 0; m < 8; ++m)
         {
-            int module = (output_buff[col] >> m) & 1;
+            int module = (qr_buffer.data[col] >> m) & 1;
 
             mask_eval[m].module_1_total += module;
 
             test_buffer[m] <<= 1;
             test_buffer[m] |= module;
             test_buffer[m] &= EVAL_PATTERN_MASK;
-            if ((test_buffer[m] == EVAL_PATTERN_LEFT) || (test_buffer[m] == EVAL_PATTERN_RIGHT))
+            if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
             {
                 mask_eval[m].score.pattern += 40;
             }
@@ -1125,14 +1258,14 @@ int main(int argc, char **argv)
         {
             for (int m = 0; m < 8; ++m)
             {
-                int module = (output_buff[row * qr_width + col] >> m) & 1;
+                int module = (qr_buffer.data[row * qr_width + col] >> m) & 1;
 
                 mask_eval[m].module_1_total += module;
 
                 test_buffer[m] <<= 1;
                 test_buffer[m] |= module;
                 test_buffer[m] &= EVAL_PATTERN_MASK;
-                if ((test_buffer[m] == EVAL_PATTERN_LEFT) || (test_buffer[m] == EVAL_PATTERN_RIGHT))
+                if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
                 {
                     mask_eval[m].score.pattern += 40;
                 }
@@ -1166,7 +1299,7 @@ int main(int argc, char **argv)
     // Init
     for (int m = 0; m < 8; ++m)
     {
-        test_buffer[m] = (output_buff[0] >> m) & 1;
+        test_buffer[m] = (qr_buffer.data[0] >> m) & 1;
         mask_eval[m].run.last_module = test_buffer[m];
         mask_eval[m].run.length = 1;
     }
@@ -1176,12 +1309,12 @@ int main(int argc, char **argv)
     {
         for (int m = 0; m < 8; ++m)
         {
-            int module = (output_buff[row * qr_width] >> m) & 1;
+            int module = (qr_buffer.data[row * qr_width] >> m) & 1;
 
             test_buffer[m] <<= 1;
             test_buffer[m] |= module;
             test_buffer[m] &= EVAL_PATTERN_MASK;
-            if ((test_buffer[m] == EVAL_PATTERN_LEFT) || (test_buffer[m] == EVAL_PATTERN_RIGHT))
+            if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
             {
                 mask_eval[m].score.pattern += 40;
             }
@@ -1212,8 +1345,8 @@ int main(int argc, char **argv)
     // Rest of image
     for (int col = 1; col < qr_width; ++col)
     {
-        int a = output_buff[col - 1];
-        int b = output_buff[col];
+        int a = qr_buffer.data[col - 1];
+        int b = qr_buffer.data[col];
         for (int m = 0; m < 8; ++m)
         {
             test_buffer[m] = (b >> m) & 1;
@@ -1222,8 +1355,8 @@ int main(int argc, char **argv)
         }
         for (int row = 1; row < qr_width; ++row)
         {
-            int c = output_buff[row * qr_width + col - 1];
-            int d = output_buff[row * qr_width + col];
+            int c = qr_buffer.data[row * qr_width + col - 1];
+            int d = qr_buffer.data[row * qr_width + col];
             for (int m = 0; m < 8; ++m)
             {
                 int module = (d >> m) & 1;
@@ -1231,7 +1364,7 @@ int main(int argc, char **argv)
                 test_buffer[m] <<= 1;
                 test_buffer[m] |= module;
                 test_buffer[m] &= EVAL_PATTERN_MASK;
-                if ((test_buffer[m] == EVAL_PATTERN_LEFT) || (test_buffer[m] == EVAL_PATTERN_RIGHT))
+                if ((EVAL_PATTERN_LEFT == test_buffer[m]) || (EVAL_PATTERN_RIGHT == test_buffer[m]))
                 {
                     mask_eval[m].score.pattern += 40;
                 }
@@ -1271,7 +1404,7 @@ int main(int argc, char **argv)
     }
 
     int mask_score = mask_eval[0].score.block + mask_eval[0].score.pattern + mask_eval[0].score.ratio + mask_eval[0].score.run;
-    uint8_t mask_pattern = 0;
+    uint8_t mask_pattern_index = 0;
     printf("Mask 0: %d (%d %d %d %d)\n", mask_score, mask_eval[0].score.block, mask_eval[0].score.pattern, mask_eval[0].score.run, mask_eval[0].score.ratio);
     for (int i = 1; i < 8; ++i)
     {
@@ -1279,17 +1412,17 @@ int main(int argc, char **argv)
         if (score < mask_score)
         {
             mask_score = score;
-            mask_pattern = i;
+            mask_pattern_index = i;
         }
         printf("Mask %01x: %d (%d %d %d %d)\n", i, score, mask_eval[i].score.block, mask_eval[i].score.pattern, mask_eval[i].score.run, mask_eval[i].score.ratio);
     }
-    printf("Mask: %u %d\n", mask_pattern, mask_score);
+    printf("Mask: %u %d\n", mask_pattern_index, mask_score);
 
     // ================================================================
     // Format
     // ================================================================
 
-    uint16_t format = (uint16_t)(correction_level << 13) | (uint16_t)(mask_pattern << 10);
+    uint16_t format = (uint16_t)(correction_level << 13) | (uint16_t)(mask_pattern_index << 10);
     uint16_t format_generator = BCH_GENERATOR << 4;
     int remainder_bits = 14;
     while (remainder_bits > 9)
@@ -1301,7 +1434,7 @@ int main(int argc, char **argv)
         format_generator >>= 1;
         --remainder_bits;
     }
-    format |= (uint16_t)(correction_level << 13) | (uint16_t)(mask_pattern << 10);
+    format |= (uint16_t)(correction_level << 13) | (uint16_t)(mask_pattern_index << 10);
 
     format ^= QR_FORMAT_MASK; // TODO: uQR support
     printf("Format/Mask: 0x%04x (15 bits)\n", format);
@@ -1309,24 +1442,24 @@ int main(int argc, char **argv)
     int function_offset = 8 * qr_width;
     for (int i = 0; i < 6; ++i)
     {
-        output_buff[function_offset + i] = ~(((format >> (14 - i)) & 1) * 0xff);
+        qr_buffer.data[function_offset + i] = ~(((format >> (14 - i)) & 1) * 0xff);
     }
-    output_buff[function_offset + 7] = ~(((format >> 8) & 1) * 0xff);
-    output_buff[function_offset + 8] = ~(((format >> 7) & 1) * 0xff);
+    qr_buffer.data[function_offset + 7] = ~(((format >> 8) & 1) * 0xff);
+    qr_buffer.data[function_offset + 8] = ~(((format >> 7) & 1) * 0xff);
     for (int i = 7; i >= 0; --i)
     {
-        output_buff[function_offset + qr_width - 1 - i] = ~(((format >> i) & 1) * 0xff);
+        qr_buffer.data[function_offset + qr_width - 1 - i] = ~(((format >> i) & 1) * 0xff);
     }
 
     for (int i = 0; i < 6; ++i)
     {
-        output_buff[i * qr_width + 8] = ~(((format >> i) & 1) * 0xff);
+        qr_buffer.data[i * qr_width + 8] = ~(((format >> i) & 1) * 0xff);
     }
-    output_buff[7 * qr_width + 8] = ~(((format >> 6) & 1) * 0xff);
-    output_buff[(qr_width - 8) * qr_width + 8] = 0;
+    qr_buffer.data[7 * qr_width + 8] = ~(((format >> 6) & 1) * 0xff);
+    qr_buffer.data[(qr_width - 8) * qr_width + 8] = 0;
     for (int i = 7; i > 0; --i)
     {
-        output_buff[(qr_width - i) * qr_width + 8] = ~(((format >> (15 - i)) & 1) * 0xff);
+        qr_buffer.data[(qr_width - i) * qr_width + 8] = ~(((format >> (15 - i)) & 1) * 0xff);
     }
 
     // ================================================================
@@ -1340,45 +1473,70 @@ int main(int argc, char **argv)
         int remainder_bits = 17;
         while (remainder_bits > 11)
         {
-            printf("%06x %06x : %06x |  ", version_code, 1 << remainder_bits, version_generator);
             if (1 << remainder_bits & version_code)
             {
                 version_code ^= version_generator;
             }
             version_generator >>= 1;
             --remainder_bits;
-            printf("%06x\n", remainder_bits);
         }
-        printf("%06x\n", version_code);
         version_code |= ((uint32_t)version + 1) << 12;
         printf("Version: 0x%06x (18 bits)\n", version_code);
         for (int i = 0; i < 6; ++i)
         {
             for (int j = 0; j < 3; ++j)
             {
-                output_buff[(qr_width - 11) + i * qr_width + j] = ~(((version_code >> ((i*3) + j)) & 1) * 0xff);
-                output_buff[qr_width * ((qr_width - 1) - 10 + j) + i] = ~(((version_code >> ((i*3) + j)) & 1) * 0xff);
+                qr_buffer.data[(qr_width - 11) + i * qr_width + j] = ~(((version_code >> ((i * 3) + j)) & 1) * 0xff);
+                qr_buffer.data[qr_width * ((qr_width - 1) - 10 + j) + i] = ~(((version_code >> ((i * 3) + j)) & 1) * 0xff);
             }
         }
     }
 
-    FILE *test_output;
-    test_output = fopen("qr.ppm", "wb");
+    size_t output_struct_size = sizeof(struct qr_data_t);
+    size_t output_data_size = (qr_width * qr_width + 0x07) >> 3;
+    void *output_buffer = calloc(output_struct_size + output_data_size, sizeof(uint8_t));
+    struct qr_data_t *qr_code = (struct qr_data_t *)output_buffer;
+    qr_code->err_level = correction_level;
+    qr_code->version = version + VERSION_OFFSET;
+    qr_code->width = qr_width;
+    qr_code->mask = mask_pattern_index;
+    qr_code->data = (uint8_t *)(output_buffer + output_struct_size);
 
-    fprintf(test_output, "P6\n%d %d\n1\n", qr_width, qr_width);
-    for (int r = 0; r < qr_width; r++)
+    struct buffer_t output_builder = {.bit_index = 0, .byte_index = 0, .data = qr_code->data};
+    for (int i = 0; i < qr_width * qr_width; ++i)
     {
-        for (int c = 0; c < qr_width; c++)
+        if (output_builder.bit_index > 7)
         {
-            uint8_t buffer[3];
-            buffer[0] = buffer[1] = buffer[2] = (output_buff[c + r * qr_width] >> mask_pattern) & 0x01;
-            fwrite(&buffer, 3, 1, test_output);
+            output_builder.bit_index = 0;
+            ++output_builder.byte_index;
         }
+        output_builder.data[output_builder.byte_index] |= ((qr_buffer.data[i] >> mask_pattern_index) & 1) << (7 - output_builder.bit_index);
+        ++output_builder.bit_index;
     }
-    fclose(test_output);
 
-    free(image.data);
+    free(qr_buffer.data);
     free(interleaved.data);
     free(encoded.data);
-    return EXIT_SUCCESS;
+    qr_buffer.data = NULL;
+    interleaved.data = NULL;
+    encoded.data = NULL;
+    return qr_code;
+}
+
+int main(int argc, char **argv)
+{
+    struct user_params_t params;
+    if (EXIT_FAILURE == parse_qr_input(argc, (const char const *const *)argv, &params))
+    {
+        return EXIT_FAILURE;
+    }
+
+    struct qr_data_t *qr_code = qr_encode(params.version, params.correction_level, argv[argc - 1]);
+    if (qr_code != NULL)
+    {
+        export_as_ppm(qr_code->width, qr_code->data);
+    }
+
+    free(qr_code);
+    qr_code = NULL;
 }
