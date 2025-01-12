@@ -2,3 +2,8 @@
 .vscode
 *.ppm
 app
+
+# Build artifacts
+build/
+*CMakeFiles/
+*.cmake

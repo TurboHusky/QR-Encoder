@@ -1,0 +1,58 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "linux",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/linux",
+            "cacheVariables": {
+                "ARCH": "x86_64",
+                "CMAKE_C_COMPILER": "cc",
+                "BUILD_UNIT_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "linux-static",
+            "inherits": [
+                "linux"
+            ],
+            "hidden": false,
+            "displayName": "Linux Static",
+            "description": "Linux build with static libs",
+            "cacheVariables": {
+                "BUILD_SHARED_LIBS": "OFF",
+                "BUILD_UNIT_TESTS": "OFF",
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/static"
+            }
+        },
+        {
+            "name": "linux-shared",
+            "inherits": [
+                "linux"
+            ],
+            "hidden": false,
+            "displayName": "Linux Shared",
+            "description": "Linux build with shared libs",
+            "cacheVariables": {
+                "BUILD_SHARED_LIBS": "ON",
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/shared",
+                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/lib"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "linux-static",
+            "configurePreset": "linux-static"
+        },
+        {
+            "name": "linux-shared",
+            "configurePreset": "linux-shared"
+        }
+    ]
+}
