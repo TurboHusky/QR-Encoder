@@ -27,14 +27,13 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set(GCC_OPTIONS -Wtrampolines)
 endif()
 
-add_compile_options(${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
-add_link_options(${BASE_LINKER_OPTIONS})
-
 add_subdirectory(src)
 
 list(APPEND SOURCE_FILES main.c)
 
 add_executable(qr)
+target_compile_options(qr PRIVATE ${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
+target_link_options(qr PRIVATE ${BASE_LINKER_OPTIONS})
 target_include_directories(qr PRIVATE ./include)
 target_sources(qr PRIVATE ${SOURCE_FILES})
 target_link_libraries(qr qr_encoder)

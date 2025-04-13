@@ -15,6 +15,8 @@ set(LIB_TYPE "STATIC")
 endif()
 
 add_library(qr_encoder ${LIB_TYPE})
+target_compile_options(qr_encoder PRIVATE ${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
+target_link_options(qr_encoder PRIVATE ${BASE_LINKER_OPTIONS})
 target_include_directories(qr_encoder PRIVATE ../include)
 target_sources(qr_encoder PRIVATE ${LIB_SOURCE_FILES})
 set_target_properties(qr_encoder PROPERTIES VERSION ${PROJECT_VERSION} C_STANDARD 17 PUBLIC_HEADER ../include/qr.h)
