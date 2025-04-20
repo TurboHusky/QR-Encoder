@@ -38,6 +38,11 @@
 #define CHAR_COUNT_LOW_LIMIT 9
 #define CHAR_COUNT_UPPER_LIMIT 26
 
+#define BITS_PER_KANJI_CHAR 13
+#define BITS_PER_THREE_NUMERIC_CHARS 10
+#define BITS_PER_TWO_ALPHANUMERIC_CHARS 11
+#define BITS_PER_SINGLE_ALPHANUMERIC_CHAR 6
+
 #define BYTE_MASK 0x04U
 #define KANJI_MASK 0x08U
 #define ALPHANUMERIC_MASK 0x02U
@@ -46,7 +51,7 @@
 enum char_encoding_t
 {
     BYTE_DATA = 2,
-    NUM_DATA = 0,
+    NUMERIC_DATA = 0,
     ALPHANUMERIC_DATA = 1,
     KANJI_DATA = 3
 };
@@ -62,6 +67,25 @@ enum encoding_mode_t
     ENC_FNC1_1 = 0x05u,
     ENC_FNC1_2 = 0x09u,
     ENC_UNSUPPORTED = 0x0fu
+};
+
+struct buffer_t
+{
+    uint8_t *data;
+    size_t size;
+    size_t byte_index;
+    uint8_t bit_index;
+};
+
+struct fill_settings_t
+{
+    int qr_width;
+    struct
+    {
+        const int *positions;
+        int size;
+    } alignment;
+    uint8_t masks[12][12];
 };
 
 // order matches char_encoding_t
@@ -132,15 +156,7 @@ const int error_blocks[40][4][5] = {
     {{28, 40, 47, 7, 48}, {30, 20, 117, 4, 118}, {30, 10, 15, 67, 16}, {30, 43, 24, 22, 25}},
     {{28, 18, 47, 31, 48}, {30, 19, 118, 6, 119}, {30, 20, 15, 61, 16}, {30, 34, 24, 34, 25}}};
 
-struct buffer_t
-{
-    uint8_t *data;
-    size_t size;
-    size_t byte_index;
-    uint8_t bit_index;
-};
-
-void add_to_buffer(uint16_t data, int bitcount, struct buffer_t *const buffer)
+static inline void add_to_buffer(uint16_t data, int bitcount, struct buffer_t *const buffer)
 {
     data <<= 16 - bitcount;
     while (bitcount > 0)
@@ -156,7 +172,7 @@ void add_to_buffer(uint16_t data, int bitcount, struct buffer_t *const buffer)
     }
 }
 
-uint8_t read_bit_stream(struct buffer_t *const buffer)
+static inline uint8_t read_bit_stream(struct buffer_t *const buffer)
 {
     uint8_t result = (buffer->data[buffer->byte_index] >> buffer->bit_index) & 1;
     --buffer->bit_index;
@@ -191,7 +207,7 @@ void export_test(const char *const name, const int qr_width, const int bit_offse
 // output:  10 bits for 3 digits
 //           7 bits for 2
 //           4 bits for 1
-void encode_numeric(const struct buffer_t input, struct buffer_t *const output)
+static inline void encode_numeric(const struct buffer_t input, struct buffer_t *const output)
 {
     size_t index = 0;
 
@@ -224,7 +240,7 @@ void encode_numeric(const struct buffer_t input, struct buffer_t *const output)
 
 // output:  11 bits per pair
 //           6 bits for a single character
-void encode_alphanumeric(const struct buffer_t input, struct buffer_t *const output)
+static inline void encode_alphanumeric(const struct buffer_t input, struct buffer_t *const output)
 {
     const char alphanumeric_lookup[256] = {
         36, 0, 0, 0, 37, 38, 0, 0, 0, 0, 39, 40, 0, 41, 42, 43,
@@ -241,7 +257,7 @@ void encode_alphanumeric(const struct buffer_t input, struct buffer_t *const out
         add_to_buffer(code, 11, output);
         index += 2;
     }
-    
+
     if (index < input.size)
     {
         uint8_t byte = input.data[index] - 32;
@@ -250,12 +266,12 @@ void encode_alphanumeric(const struct buffer_t input, struct buffer_t *const out
     }
 }
 
-void encode_kanji(const struct buffer_t input, struct buffer_t *const output)
+static inline void encode_kanji(const struct buffer_t input, struct buffer_t *const output)
 {
     for (size_t i = 0; i < input.size; i += 2)
     {
-        uint16_t temp = (input.data[i] << 8) | input.data[i];
-        if (temp < 0x9FFC)
+        uint16_t temp = (input.data[i] << 8) | input.data[i + 1];
+        if (temp <= 0x9FFC)
         {
             temp -= 0x8140;
         }
@@ -271,7 +287,7 @@ void encode_kanji(const struct buffer_t input, struct buffer_t *const output)
     }
 }
 
-void encode_byte(const struct buffer_t input, struct buffer_t *const output)
+static inline void encode_byte(const struct buffer_t input, struct buffer_t *const output)
 {
     for (size_t i = 0; i < input.size; ++i)
     {
@@ -279,19 +295,29 @@ void encode_byte(const struct buffer_t input, struct buffer_t *const output)
     }
 }
 
-static inline enum char_encoding_t input_type(const char byte1, const char byte2)
+static inline enum char_encoding_t input_type(const char c1, const char c2)
 {
+    uint8_t byte1 = (uint8_t)c1;
+    uint8_t byte2 = (uint8_t)c2;
+
     if (byte1 >= '0' && byte1 <= '9')
     {
-        return NUM_DATA;
+        return NUMERIC_DATA;
     }
     if ((byte1 >= 'A' && byte1 <= 'Z') || ' ' == byte1 || '$' == byte1 || '%' == byte1 || '*' == byte1 || '+' == byte1 || '-' == byte1 || '.' == byte1 || '/' == byte1 || ':' == byte1)
     {
         return ALPHANUMERIC_DATA;
     }
-    if ((byte1 >= '\x81' && byte1 <= '\x9F') || (byte1 >= '\xE0' && byte1 <= '\xEF'))
+    if (((byte1 >= 0x81) && (byte1 <= 0x9F)) || ((byte1 >= 0xE0) && (byte1 <= 0xEA)))
     {
-        if (byte2 >= '\x40' && byte2 <= '\xFC' && byte2 != '\x7F')
+        if ((byte2 >= 0x40) && (byte2 <= 0xFC) && (byte2 != 0x7F))
+        {
+            return KANJI_DATA;
+        }
+    }
+    if (byte1 == 0xEB)
+    {
+        if ((byte2 >= 0x40) && (byte2 <= 0xBF) && (byte2 != 0x7F))
         {
             return KANJI_DATA;
         }
@@ -304,17 +330,17 @@ size_t encoding_size(const enum char_encoding_t type, const size_t char_count)
 {
     switch (type)
     {
-    case NUM_DATA:
+    case NUMERIC_DATA:
     {
         size_t remainder_bits[] = {0, 4, 7};
-        return (char_count / 3) * 10 + remainder_bits[char_count % 3];
+        return (char_count / 3) * BITS_PER_THREE_NUMERIC_CHARS + remainder_bits[char_count % 3];
     }
     case BYTE_DATA:
         return char_count << 3;
     case KANJI_DATA:
-        return (char_count >> 1) * 13;
+        return (char_count >> 1) * BITS_PER_KANJI_CHAR;
     case ALPHANUMERIC_DATA:
-        return (char_count >> 1) * 11 + ((char_count & 0x01U) ? 6 : 0);
+        return (char_count >> 1) * BITS_PER_TWO_ALPHANUMERIC_CHARS + ((char_count & 0x01U) ? BITS_PER_SINGLE_ALPHANUMERIC_CHAR : 0);
     }
     return 0; // Should never happen
 }
@@ -327,26 +353,26 @@ enum merge_t
     MERGE_WITH_NEXT
 };
 
-enum merge_t analyse_data(const int header_index, const enum char_encoding_t last_type, const enum char_encoding_t next_type, const enum char_encoding_t data_type, const size_t char_count, const enum char_encoding_t check_type)
+enum merge_t merge_data_check(const int header_index, const enum char_encoding_t last_type, const enum char_encoding_t next_type, const enum char_encoding_t data_type, const size_t char_count, const enum char_encoding_t merge_type)
 {
-    size_t cost = encoding_size(data_type, char_count) + (size_t)header_sizes[header_index][data_type];
-    size_t base_cost = encoding_size(check_type, char_count);
+    size_t cost = (size_t)header_sizes[header_index][data_type] + encoding_size(data_type, char_count);
+    size_t merge_cost = encoding_size(merge_type, char_count);
 
-    // printf("%s cost: %lu ", BYTE_DATA == data_type ? "Byte" : KANJI_DATA == data_type ? "Kanji" : ALPHANUMERIC_DATA == data_type ? "Alpha" : "Num", cost);
-    if (check_type == last_type)
+    // printf("Cost (%s): %lu ", BYTE_DATA == data_type ? "Byte" : KANJI_DATA == data_type ? "Kanji" : ALPHANUMERIC_DATA == data_type ? "Alpha" : "Num", cost);
+    if (last_type == merge_type)
     {
-        if (last_type == next_type)
+        if (next_type == merge_type)
         {
-            cost += (size_t)header_sizes[header_index][check_type];
-            // printf("(+HDR %lu) ", header_sizes[header_index][check_type]);
+            cost += (size_t)header_sizes[header_index][merge_type];
+            // printf("(+HDR %d) ", header_sizes[header_index][merge_type]);
         }
-        // printf("/ %lu collapse with previous %s data? %s\n", base_cost, BYTE_DATA == check_type ? "Byte" : KANJI_DATA == check_type      ? "Kanji" : ALPHANUMERIC_DATA == check_type ? "Alpha" : "Num", cost > base_cost ? "yes" : "no");
-        return (cost > base_cost) ? MERGE_WITH_LAST : DO_NOT_MERGE;
+        // printf("/ %lu collapse with previous %s data? %s\n", merge_cost, BYTE_DATA == merge_type ? "Byte" : KANJI_DATA == merge_type ? "Kanji" : ALPHANUMERIC_DATA == merge_type ? "Alpha" : "Num", cost > merge_cost ? "yes" : "no");
+        return (cost > merge_cost) ? MERGE_WITH_LAST : DO_NOT_MERGE;
     }
-    else if (check_type == next_type)
+    else if (next_type == merge_type)
     {
-        // printf("/ %lu collapse with following %s data? %s\n", base_cost, BYTE_DATA == check_type ? "Byte" : KANJI_DATA == check_type      ? "Kanji" : ALPHANUMERIC_DATA == check_type ? "Alpha" : "Num", cost > base_cost ? "yes" : "no");
-        return (cost > base_cost) ? MERGE_WITH_NEXT : DO_NOT_MERGE;
+        // printf("/ %lu collapse with following %s data? %s\n", merge_cost, BYTE_DATA == merge_type ? "Byte" : KANJI_DATA == merge_type ? "Kanji" : ALPHANUMERIC_DATA == merge_type ? "Alpha" : "Num", cost > merge_cost ? "yes" : "no");
+        return (cost > merge_cost) ? MERGE_WITH_NEXT : DO_NOT_MERGE;
     }
     // printf("unable to merge\n");
     return UNABLE_TO_MERGE;
@@ -354,9 +380,9 @@ enum merge_t analyse_data(const int header_index, const enum char_encoding_t las
 
 enum merge_t analyse_numeric_data(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
 {
-    if (NUM_DATA == type)
+    if (NUMERIC_DATA == type)
     {
-        return analyse_data(header_index, last, next, type, char_count, ALPHANUMERIC_DATA);
+        return merge_data_check(header_index, last, next, type, char_count, ALPHANUMERIC_DATA);
     }
     return UNABLE_TO_MERGE;
 }
@@ -365,7 +391,7 @@ enum merge_t analyse_alpha_kanji_data(const int header_index, const enum char_en
 {
     if (BYTE_DATA != type)
     {
-        return analyse_data(header_index, last, next, type, char_count, BYTE_DATA);
+        return merge_data_check(header_index, last, next, type, char_count, BYTE_DATA);
     }
     return UNABLE_TO_MERGE;
 }
@@ -483,31 +509,21 @@ int compute_alignment_positions(const int version, int *const coords) // version
     return intervals + 1;
 }
 
-int qr_size(const int version, const int alignment_pattern_count) // version 1-40
+int qr_size(const int version, const int alignment_pattern_count)
 {
-    int N = 17 + version * 4;             // QR width
-    int free_modules = N * (N - 2) - 191; // ((N - 17) x 8) x 2 + (N - 9)^2
-    if (version > 1)
+    const int version_1 = version + VERSION_OFFSET; // version 1-40
+    int N = 17 + version_1 * 4;                     // QR width
+    int free_modules = N * (N - 2) - 191;           // ((N - 17) x 8) x 2 + (N - 9)^2
+    if (version_1 > 1)
     {
         free_modules -= alignment_pattern_count * (alignment_pattern_count * 25 - 10) - 55; // (M - 2) x 20 x 2 + (M - 1)^2 x 25
     }
-    if (version > 6)
+    if (version_1 > 6)
     {
         free_modules -= VERSION_MODULE_TOTAL;
     }
     return free_modules;
 }
-
-struct fill_settings_t
-{
-    int qr_width;
-    struct
-    {
-        const int *positions;
-        int size;
-    } alignment;
-    uint8_t masks[12][12];
-};
 
 void fill_u(struct buffer_t *const input, const int col, const int row_start, const int row_end, const int align_start, const int align_end, const struct fill_settings_t *const settings, uint8_t *const output)
 {
@@ -668,67 +684,12 @@ int repeat_score(const int module, int *const last_module, int *const run)
     return score;
 }
 
-int calculate_capacity(const int version, const int correction_level, const enum encoding_mode_t mode)
-{
-    const int *block_data = error_blocks[version][correction_level];
-    int data_bits = (block_data[1] * block_data[2] + block_data[3] * block_data[4]) << 3;
-
-    data_bits -= BLOCK_TYPE_BIT_COUNT;
-    int char_count;
-    int length_bits;
-    int remainder;
-    switch (mode)
-    {
-    case ENC_NUMERIC:
-        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 10 : (version < CHAR_COUNT_UPPER_LIMIT) ? 12
-                                                                                                 : 14;
-        data_bits -= length_bits;
-        char_count = (data_bits / 10) * 3;
-        remainder = data_bits % 10;
-        if (remainder >= 7)
-        {
-            char_count += 2;
-        }
-        else if (remainder >= 4)
-        {
-            ++char_count;
-        }
-        break;
-    case ENC_ALPHA_NUMERIC:
-        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 9 : (version < CHAR_COUNT_UPPER_LIMIT) ? 11
-                                                                                                : 13;
-        data_bits -= length_bits;
-        remainder = data_bits % 11;
-        char_count = (data_bits / 11) * 2;
-        char_count += (remainder >= 6) ? 1 : 0;
-        break;
-    case ENC_BYTE:
-        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : 16;
-        data_bits -= length_bits;
-        char_count = data_bits >> 3;
-        break;
-    case ENC_KANJI:
-        length_bits = (version < CHAR_COUNT_LOW_LIMIT) ? 8 : (version < CHAR_COUNT_UPPER_LIMIT) ? 10
-                                                                                                : 12;
-        data_bits -= length_bits;
-        char_count = data_bits / 13;
-        break;
-    default:
-        // Unrecognised format
-        printf("ERROR: Unrecognised format\n");
-        return 0;
-    }
-
-    return char_count;
-}
-
 struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_level_t correction_level, enum code_type_t code_type, const char *const buffer)
 {
-    (void) qr_version;
-    (void) code_type;
+    (void)qr_version;
+    (void)code_type;
     // const uint8_t ncodes[7][4] = {{3,0,0,0},{4,3,0,0},{5,4,4,3},{6,5,5,4},{10,9,8,8},{12,11,16,10},{14,13,16,12}};
     // const char *const data2 = "\x9A\x9F\x40\xC6\xE5\xB7\xC8\x5C\x9F\x69";
-
 
     // Worst case encoding size is byte mode version 27+:
     // 8 bits per char, 4 bit mode, 16 bit length, 4 bit terminator
@@ -1088,8 +1049,8 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
 
     int alignment_positions[ALIGNMENT_POSITIONS_MAX];
     const int n = compute_alignment_positions(version + VERSION_OFFSET, alignment_positions);
-    printf("Free modules: %d (%d bytes)\n", qr_size(version + 1, n), (qr_size(version + 1, n) + 7) >> 3);
-    size_t qr_data_size = ((size_t)qr_size(version + 1, n) + 0x07u) >> 3;
+    printf("Free modules: %d (%d bytes)\n", qr_size(version, n), (qr_size(version, n) + 7) >> 3);
+    size_t qr_data_size = ((size_t)qr_size(version, n) + 0x07u) >> 3;
     uint8_t *interleaved_data = calloc(qr_data_size, sizeof(uint8_t));
     if (QR_SIZE_MICRO == qr_type)
     {

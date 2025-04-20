@@ -43,6 +43,21 @@
                 "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/shared",
                 "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/lib"
             }
+        },
+        {
+            "name": "linux-debug",
+            "inherits": [
+                "linux"
+            ],
+            "hidden": false,
+            "displayName": "Linux Debug",
+            "description": "Linux debug build with static libs",
+            "cacheVariables": {
+                "BUILD_SHARED_LIBS": "OFF",
+                "BUILD_UNIT_TESTS": "ON",
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/static",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -53,6 +68,10 @@
         {
             "name": "linux-shared",
             "configurePreset": "linux-shared"
+        },
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
         }
     ]
 }
