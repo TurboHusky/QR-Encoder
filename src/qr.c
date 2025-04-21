@@ -269,7 +269,9 @@ static inline void encode_kanji(const struct buffer_t input, struct buffer_t *co
 {
     for (size_t i = 0; i < input.size; i += 2)
     {
-        uint16_t temp = (input.data[i] << 8) | input.data[i + 1];
+        uint16_t hi = (uint16_t)(input.data[i] << 8);
+        uint16_t lo = (uint16_t)input.data[i + 1];
+        uint16_t temp = hi | lo;
         if (temp <= 0x9FFC)
         {
             temp -= 0x8140;
@@ -876,7 +878,7 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
             if (QR_SIZE_MICRO == qr_type)
             {
                 uint16_t count_indicator_lengths[4][4] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}};
-                add_to_buffer(final_list[i].type, version, &encoder_buffer);
+                add_to_buffer((uint16_t)final_list[i].type, version, &encoder_buffer);
                 add_to_buffer((uint16_t)final_list[i].char_count, count_indicator_lengths[version][final_list[i].type], &encoder_buffer);
             }
             else
@@ -896,7 +898,7 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
                     bits = 16;
                 }
                 printf("Type: %d Count bits: %d\n", final_list[i].type, bits);
-                add_to_buffer(1 << final_list[i].type, 4, &encoder_buffer);
+                add_to_buffer((uint16_t)(1 << final_list[i].type), 4, &encoder_buffer);
                 add_to_buffer((uint16_t)final_list[i].char_count, bits, &encoder_buffer);
             }
 

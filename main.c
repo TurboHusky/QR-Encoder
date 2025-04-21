@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include "qr.h"
 
-
 struct user_params_t
 {
     int version;

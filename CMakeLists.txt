@@ -8,7 +8,8 @@ project(qr_tool LANGUAGES C VERSION 1.0 DESCRIPTION "Command line QR encoder")
 
 # https://best.openssf.org/Compiler-Hardening-Guides/Compiler-Options-Hardening-Guide-for-C-and-C++.html
 # Requires GCC 13.0.0: -fstrict-flex-arrays=3
-set(BASE_COMPILER_OPTIONS -O2 -Wall -Wextra -Wshadow -Werror -Wpedantic -Winline -Wformat -Wformat=2 -Wconversion -Wimplicit-fallthrough -Werror=format-security -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS  -fstack-clash-protection -fstack-protector-strong)
+set(BASE_MSVC_OPTIONS -O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS)
+set(BASE_COMPILER_OPTIONS -O2 -Wall -Wextra -Wshadow -Werror -Wpedantic -Winline -Wformat -Wformat=2 -Wconversion -Wimplicit-fallthrough -Werror=format-security -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong)
 set(BASE_LINKER_OPTIONS -Wl,-z,nodlopen -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,--no-copy-dt-needed-entries)
 set(PROD_OPTIONS -fno-delete-null-pointer-checks -fno-strict-overflow -fno-strict-aliasing -ftrivial-auto-var-init=zero)
 set(C_OPTIONS -Werror=implicit -Werror=incompatible-pointer-types -Werror=int-conversion)
@@ -26,13 +27,18 @@ endif()
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set(GCC_OPTIONS -Wtrampolines)
 endif()
+if (CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    set(COMPILER_OPTIONS ${BASE_MSVC_OPTIONS})
+else()
+    set(COMPILER_OPTIONS ${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
+endif()
 
 add_subdirectory(src)
 
 list(APPEND SOURCE_FILES main.c)
 
 add_executable(qr)
-target_compile_options(qr PRIVATE ${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
+target_compile_options(qr PRIVATE ${COMPILER_OPTIONS})
 target_link_options(qr PRIVATE ${BASE_LINKER_OPTIONS})
 target_include_directories(qr PRIVATE ./include)
 target_sources(qr PRIVATE ${SOURCE_FILES})
