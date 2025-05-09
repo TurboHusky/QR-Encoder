@@ -7,7 +7,7 @@ set(UNIT_TESTING OFF CACHE BOOL "CMocka: Build with unit testing" FORCE)
 set(PICKY_DEVELOPER OFF CACHE BOOL "CMocka: Build with picky developer flags" FORCE)
 set(WITH_STATIC_LIB ON CACHE BOOL "CMocka: Build with a static library" FORCE)
 
-add_subdirectory(cmocka)
+add_subdirectory(cmocka EXCLUDE_FROM_ALL)
 
 add_executable(qr_encoder_tests test_suite.c)
 

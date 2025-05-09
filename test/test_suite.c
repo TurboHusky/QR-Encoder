@@ -19,11 +19,11 @@ static void data_buffer_write(void ** /*state*/)
     uint8_t buf_data[] = {0x00, 0x00, 0x00};
     struct buffer_t test_buf = {.data = buf_data, .size = sizeof(buf_data)};
 
-    assert_uint_equal(test_buf.size, 3);
-    assert_uint_equal(test_buf.data, &buf_data[0]);
-    assert_uint_equal(test_buf.data[0], 0);
-    assert_uint_equal(test_buf.data[1], 0);
-    assert_uint_equal(test_buf.data[2], 0);
+    assert_int_equal(test_buf.size, 3);
+    assert_int_equal(test_buf.data, &buf_data[0]);
+    assert_int_equal(test_buf.data[0], 0);
+    assert_int_equal(test_buf.data[1], 0);
+    assert_int_equal(test_buf.data[2], 0);
 
     struct buff_inputs_t
     {
@@ -41,8 +41,8 @@ static void data_buffer_write(void ** /*state*/)
         test_buf.bit_index = test_inputs[i].bit_index;
         test_buf.byte_index = test_inputs[i].index;
         add_to_buffer(test_data, test_inputs[i].input_bit_count, &test_buf);
-        assert_uint_equal(test_buf.bit_index, test_inputs[i].new_bit_index);
-        assert_uint_equal(test_buf.byte_index, test_inputs[i].new_index);
+        assert_int_equal(test_buf.bit_index, test_inputs[i].new_bit_index);
+        assert_int_equal(test_buf.byte_index, test_inputs[i].new_index);
     }
 
     // ToDo: Test buffer data is correct
@@ -60,7 +60,7 @@ static void data_buffer_read(void ** /*state*/)
     for (size_t i = 0; i < sizeof(results); ++i)
     {
         uint8_t test = read_bit_stream(&test_buf);
-        assert_uint_equal(test, results[i]);
+        assert_int_equal(test, results[i]);
     }
 }
 
@@ -76,8 +76,8 @@ static void numeric_encoding(void ** /*state*/)
     encode_numeric(input, &output);
     uint8_t expected_data[] = {0x18, 0xAC, 0x28, 0x71, 0x41};
     assert_memory_equal(output.data, expected_data, 5);
-    assert_uint_equal(output.byte_index, 5);
-    assert_uint_equal(output.bit_index, 0);
+    assert_int_equal(output.byte_index, 5);
+    assert_int_equal(output.bit_index, 0);
 
     input.size = 8;
     input.byte_index = 0;
@@ -89,8 +89,8 @@ static void numeric_encoding(void ** /*state*/)
     expected_data[2] = 0x26;
     expected_data[3] = 0xC0;
     assert_memory_equal(output.data, expected_data, 4);
-    assert_uint_equal(output.byte_index, 3);
-    assert_uint_equal(output.bit_index, 3);
+    assert_int_equal(output.byte_index, 3);
+    assert_int_equal(output.bit_index, 3);
 
     input.size = 4;
     input.byte_index = 0;
@@ -101,8 +101,8 @@ static void numeric_encoding(void ** /*state*/)
     encode_numeric(input, &output);
     expected_data[1] = 0x9C;
     assert_memory_equal(output.data, expected_data, 2);
-    assert_uint_equal(output.byte_index, 1);
-    assert_uint_equal(output.bit_index, 6);
+    assert_int_equal(output.byte_index, 1);
+    assert_int_equal(output.bit_index, 6);
 }
 
 static void alphanumeric_encoding(void ** /*state*/)
@@ -117,8 +117,8 @@ static void alphanumeric_encoding(void ** /*state*/)
     encode_alphanumeric(input, &output);
     uint8_t expected_data[] = {0x39, 0xA8, 0xA5, 0x42, 0xAE, 0x16, 0x7A, 0xE6, 0x5F, 0xAC, 0x51, 0x95, 0xB4, 0x26, 0xB2, 0xDC, 0x1C, 0x3A, 0x00, 0x42, 0xE8, 0xB9, 0x22, 0xA5, 0xC7, 0x3C, 0xED, 0x5E, 0x63, 0xE3, 0x6C};
     assert_memory_equal(output.data, expected_data, 31);
-    assert_uint_equal(output.byte_index, 31);
-    assert_uint_equal(output.bit_index, 0);
+    assert_int_equal(output.byte_index, 31);
+    assert_int_equal(output.bit_index, 0);
 }
 
 static void kanji_encoding(void ** /*stote*/)
@@ -133,8 +133,8 @@ static void kanji_encoding(void ** /*stote*/)
     encode_kanji(input, &output);
     uint8_t expected_data[] = {0x00, 0x05, 0xAF, 0x80, 0x81, 0x73, 0xCB, 0xA0, 0x7E, 0xFA, 0xF0, 0x1F, 0x7C, 0xFF, 0xFB, 0x67, 0xF5, 0x54};
     assert_memory_equal(output.data, expected_data, 18);
-    assert_uint_equal(output.byte_index, 17);
-    assert_uint_equal(output.bit_index, 7);
+    assert_int_equal(output.byte_index, 17);
+    assert_int_equal(output.bit_index, 7);
 }
 
 static void byte_encoding(void ** /*state*/)
@@ -148,8 +148,8 @@ static void byte_encoding(void ** /*state*/)
     encode_byte(input, &output);
     uint8_t expected_data[] = {0x00, 0x1F, 0xE0, 0x22, 0x10, 0x01, 0x15, 0x80};
     assert_memory_equal(output.data, expected_data, 8);
-    assert_uint_equal(output.byte_index, 7);
-    assert_uint_equal(output.bit_index, 3);
+    assert_int_equal(output.byte_index, 7);
+    assert_int_equal(output.bit_index, 3);
     free(output_data);
 }
 
@@ -158,24 +158,24 @@ static void kanji_check(const char char1, const char end)
     size_t count = 0;
     for (char j = '\x00'; j < '\x40'; ++j)
     {
-        assert_uint_not_equal(input_type(char1, j), KANJI_DATA);
+        assert_int_not_equal(input_type(char1, j), KANJI_DATA);
         ++count;
     }
     for (char j = '\x40'; j <= '\x7E'; ++j)
     {
-        assert_uint_equal(input_type(char1, j), KANJI_DATA);
+        assert_int_equal(input_type(char1, j), KANJI_DATA);
         ++count;
     }
-    assert_uint_not_equal(input_type(char1, '\x7F'), KANJI_DATA);
+    assert_int_not_equal(input_type(char1, '\x7F'), KANJI_DATA);
     ++count;
     for (char j = '\x80'; j <= end; ++j)
     {
-        assert_uint_equal(input_type(char1, j), KANJI_DATA);
+        assert_int_equal(input_type(char1, j), KANJI_DATA);
         ++count;
     }
     for (char j = end + 1; j <= '\xFF'; ++j)
     {
-        assert_uint_not_equal(input_type(char1, j), KANJI_DATA);
+        assert_int_not_equal(input_type(char1, j), KANJI_DATA);
         ++count;
     }
 }
@@ -238,13 +238,13 @@ static void type_identification(void ** /*state*/)
 
 static void encoding_lengths(void ** /*state*/)
 {
-    assert_uint_equal(encoding_size(NUMERIC_DATA, 12), 40);
-    assert_uint_equal(encoding_size(NUMERIC_DATA, 16), 54);
-    assert_uint_equal(encoding_size(NUMERIC_DATA, 20), 67);
-    assert_uint_equal(encoding_size(ALPHANUMERIC_DATA, 23), 127);
-    assert_uint_equal(encoding_size(ALPHANUMERIC_DATA, 14), 77);
-    assert_uint_equal(encoding_size(BYTE_DATA, 23), 184);
-    assert_uint_equal(encoding_size(KANJI_DATA, 24), 156);
+    assert_int_equal(encoding_size(NUMERIC_DATA, 12), 40);
+    assert_int_equal(encoding_size(NUMERIC_DATA, 16), 54);
+    assert_int_equal(encoding_size(NUMERIC_DATA, 20), 67);
+    assert_int_equal(encoding_size(ALPHANUMERIC_DATA, 23), 127);
+    assert_int_equal(encoding_size(ALPHANUMERIC_DATA, 14), 77);
+    assert_int_equal(encoding_size(BYTE_DATA, 23), 184);
+    assert_int_equal(encoding_size(KANJI_DATA, 24), 156);
 }
 
 static void data_analysis(void ** /*state*/)
@@ -434,22 +434,22 @@ void mask_tests(void ** /*state*/)
     uint16_t pattern_buffer = EVAL_PATTERN_LEFT >> 1;
     int score = pattern_score(0, &pattern_buffer);
     assert_int_equal(score, 40);
-    assert_uint_equal(pattern_buffer, EVAL_PATTERN_LEFT);
+    assert_int_equal(pattern_buffer, EVAL_PATTERN_LEFT);
 
     pattern_buffer >>= 1;
     score = pattern_score(1, &pattern_buffer);
     assert_int_equal(score, 0);
-    assert_uint_not_equal(pattern_buffer, EVAL_PATTERN_LEFT);
+    assert_int_not_equal(pattern_buffer, EVAL_PATTERN_LEFT);
 
     pattern_buffer = EVAL_PATTERN_RIGHT >> 1;
     score = pattern_score(1, &pattern_buffer);
     assert_int_equal(score, 40);
-    assert_uint_equal(pattern_buffer, EVAL_PATTERN_RIGHT);
+    assert_int_equal(pattern_buffer, EVAL_PATTERN_RIGHT);
 
     pattern_buffer >>= 1;
     score = pattern_score(0, &pattern_buffer);
     assert_int_equal(score, 0);
-    assert_uint_not_equal(pattern_buffer, EVAL_PATTERN_RIGHT);
+    assert_int_not_equal(pattern_buffer, EVAL_PATTERN_RIGHT);
 
     int run = 0;
     int last = 0;
