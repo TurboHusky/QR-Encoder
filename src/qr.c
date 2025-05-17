@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 #include "qr.h"
 
@@ -497,11 +496,15 @@ int compute_alignment_positions(const int version, int *const coords) // version
     {
         return 0;
     }
-    int intervals = (version / 7) + 1;                              // Number of gaps between alignment patterns
-    int distance = 4 * version + 4;                                 // Distance between first and last alignment pattern
-    int step = (int)(lround((double)distance / (double)intervals)); // Round equal spacing to nearest integer
-    step += step & 1;                                               // Round step to next even number
-    coords[0] = 6;                                                  // First coordinate is always 6 (can't be calculated with step)
+    int intervals = (version / 7) + 1; // Number of gaps between alignment patterns
+    int distance = 4 * version + 4;    // Distance between first and last alignment pattern
+    int step = distance / intervals;
+    if ((distance % intervals << 1) >= intervals) // Round spacing to nearest integer
+    {
+        ++step;
+    }
+    step += step & 1; // Round step to next even number
+    coords[0] = 6;    // First coordinate is always 6 (can't be calculated with step)
     for (int i = 1; i <= intervals; ++i)
     {
         coords[i] = 6 + distance - step * (intervals - i); // Start right/bottom and go left/up by step*k
