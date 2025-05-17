@@ -7,71 +7,70 @@
     },
     "configurePresets": [
         {
-            "name": "linux",
+            "name": "x86_base",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build/linux",
+            "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
                 "ARCH": "x86_64",
-                "CMAKE_C_COMPILER": "cc",
                 "CMAKE_BUILD_TYPE": "Release",
                 "BUILD_UNIT_TESTS": "OFF"
             }
         },
         {
-            "name": "linux-static",
+            "name": "static",
             "inherits": [
-                "linux"
+                "x86_base"
             ],
             "hidden": false,
-            "displayName": "Linux Static",
-            "description": "Linux build with static libs",
+            "displayName": "Static",
+            "description": "Build with static libs",
             "cacheVariables": {
                 "BUILD_SHARED_LIBS": "OFF",
-                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/static"
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/bin/static"
             }
         },
         {
-            "name": "linux-shared",
+            "name": "shared",
             "inherits": [
-                "linux"
+                "x86_base"
             ],
             "hidden": false,
-            "displayName": "Linux Shared",
-            "description": "Linux build with shared libs",
+            "displayName": "Shared",
+            "description": "Build with shared libs",
             "cacheVariables": {
                 "BUILD_SHARED_LIBS": "ON",
-                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/shared",
-                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/lib"
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/bin/shared",
+                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/build/lib"
             }
         },
         {
-            "name": "linux-debug",
+            "name": "debug",
             "inherits": [
-                "linux"
+                "x86_base"
             ],
             "hidden": false,
-            "displayName": "Linux Debug",
-            "description": "Linux debug build with static libs",
+            "displayName": "Debug",
+            "description": "Debug build with static libs",
             "cacheVariables": {
                 "BUILD_SHARED_LIBS": "OFF",
                 "BUILD_UNIT_TESTS": "ON",
-                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/linux/bin/static",
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/bin/debug",
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "linux-static",
-            "configurePreset": "linux-static"
+            "name": "static",
+            "configurePreset": "static"
         },
         {
-            "name": "linux-shared",
-            "configurePreset": "linux-shared"
+            "name": "shared",
+            "configurePreset": "shared"
         },
         {
-            "name": "linux-debug",
-            "configurePreset": "linux-debug"
+            "name": "debug",
+            "configurePreset": "debug"
         }
     ]
 }

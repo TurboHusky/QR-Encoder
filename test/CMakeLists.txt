@@ -7,7 +7,6 @@ set(UNIT_TESTING OFF CACHE BOOL "CMocka: Build with unit testing" FORCE)
 set(PICKY_DEVELOPER OFF CACHE BOOL "CMocka: Build with picky developer flags" FORCE)
 set(WITH_STATIC_LIB ON CACHE BOOL "CMocka: Build with a static library" FORCE)
 
-add_subdirectory(cmocka EXCLUDE_FROM_ALL)
 
 add_executable(qr_encoder_tests test_suite.c)
 
@@ -18,9 +17,10 @@ target_link_libraries(qr_encoder_tests cmocka qr_encoder gcov)
 set_target_properties(qr_encoder_tests PROPERTIES VERSION ${PROJECT_VERSION})
 
 if (CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-    add_custom_command(TARGET qr_encoder_tests POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:qr_encoder_tests> $<TARGET_FILE_DIR:qr_encoder_tests> )
+add_custom_command(TARGET qr_encoder_tests POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:qr_encoder_tests> $<TARGET_FILE_DIR:qr_encoder_tests> )
 endif()
 
+add_subdirectory(cmocka EXCLUDE_FROM_ALL)
 enable_testing()
 
 add_test(
