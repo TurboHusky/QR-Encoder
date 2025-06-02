@@ -247,74 +247,214 @@ static void encoding_lengths(void **state)
     assert_int_equal(encoding_size(KANJI_DATA, 24), 156);
 }
 
-static void data_analysis(void **state)
+static void input_parsing(void **state)
+{
+    const char *const basic_input = "12345";
+    size_t capacity = 1;
+    struct encoding_run_t *run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
+    struct encoding_run_t *old_ptr = run_ptr;
+    size_t size = 0;
+    parse_input(basic_input, &run_ptr, &capacity, &size);
+    assert_int_equal(capacity, 1);
+    assert_int_equal(size, 1);
+    assert_int_equal(run_ptr[0].type, NUMERIC_DATA);
+    assert_int_equal(run_ptr[0].char_count, 5);
+    assert_ptr_equal(capacity, 1);
+    free(run_ptr);
+
+    capacity = 1;
+    run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
+    old_ptr = run_ptr;
+    size = 0;
+    const char mixed_input[8] = {'A', 'B', 'C', '1', 'a', 0x93, 0x5F, '\0'};
+    parse_input(mixed_input, &run_ptr, &capacity, &size);
+    assert_int_equal(capacity, 4);
+    assert_int_equal(size, 4);
+    assert_int_equal(run_ptr[0].type, ALPHANUMERIC_DATA);
+    assert_int_equal(run_ptr[0].char_count, 3);
+    assert_int_equal(run_ptr[1].type, NUMERIC_DATA);
+    assert_int_equal(run_ptr[1].char_count, 1);
+    assert_int_equal(run_ptr[2].type, BYTE_DATA);
+    assert_int_equal(run_ptr[2].char_count, 1);
+    assert_int_equal(run_ptr[3].type, KANJI_DATA);
+    assert_int_equal(run_ptr[3].char_count, 1);
+    assert_ptr_not_equal(capacity, 2);
+    free(run_ptr);
+}
+
+static void input_optimisation(void **state)
 {
     // 7 header indices, 4uQR, 3 versions
-
-    assert_int_equal(analyse_numeric_data(1, BYTE_DATA, BYTE_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(analyse_numeric_data(1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(analyse_numeric_data(1, KANJI_DATA, KANJI_DATA, KANJI_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(analyse_alpha_kanji_data(1, KANJI_DATA, KANJI_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
+    assert_int_equal(merge_to_alphanumeric(1, BYTE_DATA, BYTE_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
+    assert_int_equal(merge_to_alphanumeric(1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, 2), UNABLE_TO_MERGE);
+    assert_int_equal(merge_to_alphanumeric(1, KANJI_DATA, KANJI_DATA, KANJI_DATA, 2), UNABLE_TO_MERGE);
+    assert_int_equal(merge_to_byte(1, KANJI_DATA, KANJI_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
 
     int num_to_alpha_limits[6][4] = {{2, 3, 4, 5}, {2, 3, 5, 6}, {4, 5, 7, 8}, {6, 7, 12, 13}, {7, 8, 14, 15}, {8, 9, 16, 17}};
 
     for (int i = 0; i < 6; ++i)
     {
-        assert_int_equal(analyse_numeric_data(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_numeric_data(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_numeric_data(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(analyse_numeric_data(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_numeric_data(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_numeric_data(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][3]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_alphanumeric(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_NEXT);
+        assert_int_equal(merge_to_alphanumeric(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][2]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][3]), DO_NOT_MERGE);
     }
 
     int num_to_byte_limits[5][4] = {{1, 2, 2, 3}, {1, 2, 3, 4}, {2, 3, 5, 6}, {3, 4, 7, 8}, {3, 4, 8, 9}};
 
     for (int i = 0; i < 5; ++i)
     {
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][3]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_NEXT);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][2]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][3]), DO_NOT_MERGE);
     }
 
     int alpha_to_byte_limits[5][4] = {{2, 3, 4, 5}, {3, 4, 6, 7}, {5, 6, 9, 10}, {5, 6, 13, 14}, {6, 7, 14, 15}};
 
     for (int i = 0; i < 5; ++i)
     {
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][3]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_NEXT);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][2]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][3]), DO_NOT_MERGE);
     }
 
     int kanji_to_byte_limits[5][4] = {{2, 4, 6, 8}, {4, 6, 8, 10}, {6, 8, 14, 16}, {8, 10, 22, 24}, {10, 12, 22, 24}};
 
     for (int i = 0; i < 5; ++i)
     {
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(analyse_alpha_kanji_data(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][3]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_NEXT);
+        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][2]), MERGE_WITH_LAST);
+        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][3]), DO_NOT_MERGE);
     }
 
-    struct encoding_run_t test_list[] = {{ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, 6}, {BYTE_DATA, 4}, {ALPHANUMERIC_DATA, 2}};
+    // Merge data to minimise bits required
+    size_t n_to_a[6][2] = {{3, 5}, {3, 6}, {5, 8}, {7, 13}, {8, 15}, {9, 17}};
+    for (int i = 0; i < 6; ++i)
+    {
+        struct encoding_run_t merge[] = {{ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][1] - 1}, {ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][0] - 1}, {BYTE_DATA, 1}};
+        struct encoding_run_t no_merge[] = {{ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][1]}, {ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][0]}, {BYTE_DATA, 1}};
+        merge_data(i + 1, merge, 5, merge_to_alphanumeric);
+        merge_data(i + 1, no_merge, 5, merge_to_alphanumeric);
+        assert_int_equal(merge[0].char_count, 0);
+        assert_int_equal(merge[1].char_count, 0);
+        assert_int_equal(merge[2].char_count, 0);
+        assert_int_equal(merge[3].type, ALPHANUMERIC_DATA);
+        assert_int_equal(merge[3].char_count, n_to_a[i][0] + n_to_a[i][1]);
+        assert_int_equal(merge[4].type, BYTE_DATA);
+        assert_int_equal(merge[4].char_count, 1);
+        assert_int_equal(no_merge[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(no_merge[0].char_count, 1);
+        assert_int_equal(no_merge[1].type, NUMERIC_DATA);
+        assert_int_equal(no_merge[1].char_count, n_to_a[i][1]);
+        assert_int_equal(no_merge[2].type, ALPHANUMERIC_DATA);
+        assert_int_equal(no_merge[2].char_count, 1);
+        assert_int_equal(no_merge[3].type, NUMERIC_DATA);
+        assert_int_equal(no_merge[3].char_count, n_to_a[i][0]);
+        assert_int_equal(no_merge[4].type, BYTE_DATA);
+        assert_int_equal(no_merge[4].char_count, 1);
+    }
 
-    merge_data(5, test_list, 4, analyse_numeric_data);
-    assert_int_equal(test_list[0].char_count, 0);
-    assert_int_equal(test_list[1].type, ALPHANUMERIC_DATA);
-    assert_int_equal(test_list[1].char_count, 7);
+    size_t n_to_b[5][2] = {{2, 3}, {2, 4}, {3, 6}, {4, 8}, {4, 9}};
+    for (int i = 0; i < 5; ++i)
+    {
+        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][1] - 1}, {BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][0] - 1}, {KANJI_DATA, 50}};
+        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][1]}, {BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][0]}, {KANJI_DATA, 50}};
+        merge_data(i + 2, merge, 5, merge_to_byte);
+        merge_data(i + 2, no_merge, 5, merge_to_byte);
+        assert_int_equal(merge[0].char_count, 0);
+        assert_int_equal(merge[1].char_count, 0);
+        assert_int_equal(merge[2].char_count, 0);
+        assert_int_equal(merge[3].type, BYTE_DATA);
+        assert_int_equal(merge[3].char_count, n_to_b[i][0] + n_to_b[i][1]);
+        assert_int_equal(merge[4].type, KANJI_DATA);
+        assert_int_equal(merge[4].char_count, 50);
+        assert_int_equal(no_merge[0].type, BYTE_DATA);
+        assert_int_equal(no_merge[0].char_count, 1);
+        assert_int_equal(no_merge[1].type, NUMERIC_DATA);
+        assert_int_equal(no_merge[1].char_count, n_to_b[i][1]);
+        assert_int_equal(no_merge[2].type, BYTE_DATA);
+        assert_int_equal(no_merge[2].char_count, 1);
+        assert_int_equal(no_merge[3].type, NUMERIC_DATA);
+        assert_int_equal(no_merge[3].char_count, n_to_b[i][0]);
+        assert_int_equal(no_merge[4].type, KANJI_DATA);
+        assert_int_equal(no_merge[4].char_count, 50);
+    }
 
-    merge_data(5, test_list, 4, analyse_alpha_kanji_data);
-    assert_int_equal(test_list[2].char_count, 0);
-    assert_int_equal(test_list[3].type, BYTE_DATA);
-    assert_int_equal(test_list[3].char_count, 6);
+    size_t a_to_b[5][2] = {{3, 5}, {4, 7}, {6, 10}, {6, 14}, {7, 15}};
+    for (int i = 0; i < 5; ++i)
+    {
+        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][1] - 1}, {BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][0] - 1}, {KANJI_DATA, 50}};
+        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][1]}, {BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][0]}, {KANJI_DATA, 50}};
+        merge_data(i + 2, merge, 5, merge_to_byte);
+        merge_data(i + 2, no_merge, 5, merge_to_byte);
+        assert_int_equal(merge[0].char_count, 0);
+        assert_int_equal(merge[1].char_count, 0);
+        assert_int_equal(merge[2].char_count, 0);
+        assert_int_equal(merge[3].type, BYTE_DATA);
+        assert_int_equal(merge[3].char_count, a_to_b[i][0] + a_to_b[i][1]);
+        assert_int_equal(merge[4].type, KANJI_DATA);
+        assert_int_equal(merge[4].char_count, 50);
+        assert_int_equal(no_merge[0].type, BYTE_DATA);
+        assert_int_equal(no_merge[0].char_count, 1);
+        assert_int_equal(no_merge[1].type, ALPHANUMERIC_DATA);
+        assert_int_equal(no_merge[1].char_count, a_to_b[i][1]);
+        assert_int_equal(no_merge[2].type, BYTE_DATA);
+        assert_int_equal(no_merge[2].char_count, 1);
+        assert_int_equal(no_merge[3].type, ALPHANUMERIC_DATA);
+        assert_int_equal(no_merge[3].char_count, a_to_b[i][0]);
+        assert_int_equal(no_merge[4].type, KANJI_DATA);
+        assert_int_equal(no_merge[4].char_count, 50);
+    }
+
+    size_t k_to_b[5][2] = {{4, 8}, {6, 10}, {8, 16}, {10, 24}, {12, 24}};
+    for (int i = 0; i < 5; ++i)
+    {
+        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][1] - 2}, {BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][0] - 2}, {NUMERIC_DATA, 10}};
+        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][1]}, {BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][0]}, {NUMERIC_DATA, 10}};
+        merge_data(i + 2, merge, 5, merge_to_byte);
+        merge_data(i + 2, no_merge, 5, merge_to_byte);
+        assert_int_equal(merge[0].char_count, 0);
+        assert_int_equal(merge[1].char_count, 0);
+        assert_int_equal(merge[2].char_count, 0);
+        assert_int_equal(merge[3].type, BYTE_DATA);
+        assert_int_equal(merge[3].char_count, k_to_b[i][0] + k_to_b[i][1] - 2);
+        assert_int_equal(merge[4].type, NUMERIC_DATA);
+        assert_int_equal(merge[4].char_count, 10);
+        assert_int_equal(no_merge[0].type, BYTE_DATA);
+        assert_int_equal(no_merge[0].char_count, 1);
+        assert_int_equal(no_merge[1].type, KANJI_DATA);
+        assert_int_equal(no_merge[1].char_count, k_to_b[i][1]);
+        assert_int_equal(no_merge[2].type, BYTE_DATA);
+        assert_int_equal(no_merge[2].char_count, 1);
+        assert_int_equal(no_merge[3].type, KANJI_DATA);
+        assert_int_equal(no_merge[3].char_count, k_to_b[i][0]);
+        assert_int_equal(no_merge[4].type, NUMERIC_DATA);
+        assert_int_equal(no_merge[4].char_count, 10);
+    }
+
+    // Determine correct QR type for input
+    uint8_t data_types[5] = {NUMERIC_MASK, NUMERIC_MASK | ALPHANUMERIC_MASK, KANJI_MASK, BYTE_MASK, BYTE_MASK};
+    uint8_t correction_levels[5] = {CORRECTION_LEVEL_L, CORRECTION_LEVEL_L, CORRECTION_LEVEL_L, CORRECTION_LEVEL_Q, CORRECTION_LEVEL_H};
+    struct encoding_run_t input[5] = {{NUMERIC_DATA, 5}, {ALPHANUMERIC_DATA, 5}, {KANJI_DATA, 4}, {BYTE_DATA, 4}, {BYTE_DATA, 10}};
+    int headers[5] = {0,1,2,3,4};
+    for (int i = 0; i < 5; ++i)
+    {
+        struct encoding_run_t output[5];
+        int module_count = 0;
+        int header = optimise_input(&input[i], 1, correction_levels[i], data_types[i], output, &module_count);
+        assert_int_equal(header, headers[i]);
+    }
 }
 
 static void error_code_generation(void **state)
@@ -593,6 +733,7 @@ void mask_tests(void **state)
 int main()
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(input_parsing),
         cmocka_unit_test(data_buffer_write),
         cmocka_unit_test(data_buffer_read),
         cmocka_unit_test(numeric_encoding),
@@ -601,7 +742,7 @@ int main()
         cmocka_unit_test(byte_encoding),
         cmocka_unit_test(type_identification),
         cmocka_unit_test(encoding_lengths),
-        cmocka_unit_test(data_analysis),
+        cmocka_unit_test(input_optimisation),
         cmocka_unit_test(error_code_generation),
         cmocka_unit_test(alignment_positions),
         cmocka_unit_test(data_capacity),

@@ -379,7 +379,7 @@ enum merge_t merge_data_check(const int header_index, const enum char_encoding_t
     return UNABLE_TO_MERGE;
 }
 
-enum merge_t analyse_numeric_data(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
+enum merge_t merge_to_alphanumeric(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
 {
     if (NUMERIC_DATA == type)
     {
@@ -388,7 +388,7 @@ enum merge_t analyse_numeric_data(const int header_index, const enum char_encodi
     return UNABLE_TO_MERGE;
 }
 
-enum merge_t analyse_alpha_kanji_data(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
+enum merge_t merge_to_byte(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
 {
     if (BYTE_DATA != type)
     {
@@ -696,7 +696,7 @@ uint8_t parse_input(const char *const input, struct encoding_run_t **encoding_li
     size_t run = 0;
     size_t char_count = 0;
     uint8_t data_masks[] = {NUMERIC_MASK, ALPHANUMERIC_MASK, BYTE_MASK, KANJI_MASK};
-    enum char_encoding_t type = BYTE_DATA;
+    enum char_encoding_t type = input_type(input[char_count], input[char_count + 1]);
     while (input[char_count] != '\0')
     {
         enum char_encoding_t new_type = input_type(input[char_count], input[char_count + 1]);
@@ -784,8 +784,8 @@ int optimise_input(const struct encoding_run_t *const encoding_list, const size_
             memcpy(final_list, encoding_list, list_size * sizeof(struct encoding_run_t));
             final_list[list_size].type = encoding_list[list_size].type;
             final_list[list_size].char_count = 0;
-            merge_data(header_index, final_list, list_size, analyse_numeric_data);
-            merge_data(header_index, final_list, list_size, analyse_alpha_kanji_data);
+            merge_data(header_index, final_list, list_size, merge_to_alphanumeric);
+            merge_data(header_index, final_list, list_size, merge_to_byte);
             *module_count = 0;
             for (int j = 0; j < (int)list_size; ++j)
             {
