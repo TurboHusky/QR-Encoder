@@ -13,144 +13,11 @@ uint8_t gf256_lookup[256][2] = {
 
 const int pattern_count[] = {0, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7};
 
-static void data_buffer_write(void **state)
+static void clear_buffer(struct buffer_t *const buf)
 {
-    // No bounds checking
-    uint8_t buf_data[] = {0x00, 0x00, 0x00};
-    struct buffer_t test_buf = {.data = buf_data, .size = sizeof(buf_data)};
-
-    assert_int_equal(test_buf.size, 3);
-    assert_int_equal(test_buf.data, &buf_data[0]);
-    assert_int_equal(test_buf.data[0], 0);
-    assert_int_equal(test_buf.data[1], 0);
-    assert_int_equal(test_buf.data[2], 0);
-
-    struct buff_inputs_t
-    {
-        size_t index;
-        size_t new_index;
-        int input_bit_count;
-        uint8_t bit_index;
-        uint8_t new_bit_index;
-    } test_inputs[] = {
-        {0, 1, 8, 0, 0}, {0, 0, 7, 0, 7}, {0, 1, 7, 1, 0}, {0, 0, 1, 0, 1}, {0, 1, 1, 7, 0}, {0, 0, 4, 2, 6}, {0, 4, 37, 2, 7}};
-
-    uint16_t test_data = rand();
-    for (size_t i = 0; i < 7; ++i)
-    {
-        test_buf.bit_index = test_inputs[i].bit_index;
-        test_buf.byte_index = test_inputs[i].index;
-        add_to_buffer(test_data, test_inputs[i].input_bit_count, &test_buf);
-        assert_int_equal(test_buf.bit_index, test_inputs[i].new_bit_index);
-        assert_int_equal(test_buf.byte_index, test_inputs[i].new_index);
-    }
-
-    // ToDo: Test buffer data is correct
-}
-
-static void data_buffer_read(void **state)
-{
-    // No bounds checking
-    uint8_t buf_data[] = {0xC7, 0x35, 0x42};
-    struct buffer_t test_buf = {.data = buf_data, .size = sizeof(buf_data)};
-
-    test_buf.byte_index = 0;
-    test_buf.bit_index = 7;
-    uint8_t results[] = {0, 0, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0xFF};
-    for (size_t i = 0; i < sizeof(results); ++i)
-    {
-        uint8_t test = read_bit_stream(&test_buf);
-        assert_int_equal(test, results[i]);
-    }
-}
-
-static void numeric_encoding(void **state)
-{
-    uint8_t input_data[] = {'0', '9', '8', '7', '0', '6', '5', '4', '0', '3', '2', '1'};
-    struct buffer_t input = {.data = input_data, .size = 12, .byte_index = 0};
-
-    uint8_t output_data[8];
-    struct buffer_t output = {.data = output_data, .size = 8, .byte_index = 0, .bit_index = 0};
-
-    memset(output_data, 0, 8);
-    encode_numeric(input, &output);
-    uint8_t expected_data[] = {0x18, 0xAC, 0x28, 0x71, 0x41};
-    assert_memory_equal(output.data, expected_data, 5);
-    assert_int_equal(output.byte_index, 5);
-    assert_int_equal(output.bit_index, 0);
-
-    input.size = 8;
-    input.byte_index = 0;
-    input.bit_index = 0;
-    output.byte_index = 0;
-    output.bit_index = 0;
-    memset(output_data, 0, 8);
-    encode_numeric(input, &output);
-    expected_data[2] = 0x26;
-    expected_data[3] = 0xC0;
-    assert_memory_equal(output.data, expected_data, 4);
-    assert_int_equal(output.byte_index, 3);
-    assert_int_equal(output.bit_index, 3);
-
-    input.size = 4;
-    input.byte_index = 0;
-    input.bit_index = 0;
-    output.byte_index = 0;
-    output.bit_index = 0;
-    memset(output_data, 0, 8);
-    encode_numeric(input, &output);
-    expected_data[1] = 0x9C;
-    assert_memory_equal(output.data, expected_data, 2);
-    assert_int_equal(output.byte_index, 1);
-    assert_int_equal(output.bit_index, 6);
-}
-
-static void alphanumeric_encoding(void **state)
-{
-    char *input_data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 $%*+-./:";
-    struct buffer_t input = {.data = input_data, .size = 45, .byte_index = 0};
-
-    uint8_t output_data[32];
-    struct buffer_t output = {.data = output_data, .size = 32, .byte_index = 0, .bit_index = 0};
-
-    memset(output_data, 0, 32);
-    encode_alphanumeric(input, &output);
-    uint8_t expected_data[] = {0x39, 0xA8, 0xA5, 0x42, 0xAE, 0x16, 0x7A, 0xE6, 0x5F, 0xAC, 0x51, 0x95, 0xB4, 0x26, 0xB2, 0xDC, 0x1C, 0x3A, 0x00, 0x42, 0xE8, 0xB9, 0x22, 0xA5, 0xC7, 0x3C, 0xED, 0x5E, 0x63, 0xE3, 0x6C};
-    assert_memory_equal(output.data, expected_data, 31);
-    assert_int_equal(output.byte_index, 31);
-    assert_int_equal(output.bit_index, 0);
-}
-
-static void kanji_encoding(void **state)
-{
-    uint8_t input_data[] = {0x81, 0x40, 0x9F, 0x7E, 0x81, 0x80, 0x9F, 0xFC, 0xE0, 0x40, 0xEB, 0x7E, 0xE0, 0x80, 0xEA, 0xFC, 0xEB, 0xBF, 0x93, 0x5f, 0xE4, 0xAA};
-    struct buffer_t input = {.data = input_data, .size = 22, .byte_index = 0};
-
-    uint8_t output_data[32];
-    struct buffer_t output = {.data = output_data, .size = 32, .byte_index = 0, .bit_index = 0};
-
-    memset(output_data, 0, 32);
-    encode_kanji(input, &output);
-    uint8_t expected_data[] = {0x00, 0x05, 0xAF, 0x80, 0x81, 0x73, 0xCB, 0xA0, 0x7E, 0xFA, 0xF0, 0x1F, 0x7C, 0xFF, 0xFB, 0x67, 0xF5, 0x54};
-    assert_memory_equal(output.data, expected_data, 18);
-    assert_int_equal(output.byte_index, 17);
-    assert_int_equal(output.bit_index, 7);
-}
-
-static void byte_encoding(void **state)
-{
-    uint8_t input_data[] = {0x00, 0xFF, 0x01, 0x10, 0x80, 0x08, 0xAC};
-    struct buffer_t input = {.data = input_data, .size = 7, .byte_index = 0};
-
-    uint8_t *output_data = calloc(32, sizeof(uint8_t));
-    struct buffer_t output = {.data = output_data, .size = 32, .byte_index = 0, .bit_index = 3};
-
-    encode_byte(input, &output);
-    uint8_t expected_data[] = {0x00, 0x1F, 0xE0, 0x22, 0x10, 0x01, 0x15, 0x80};
-    assert_memory_equal(output.data, expected_data, 8);
-    assert_int_equal(output.byte_index, 7);
-    assert_int_equal(output.bit_index, 3);
-    free(output_data);
+    buf->bit_index = 0;
+    buf->byte_index = 0;
+    memset(buf->data, 0, buf->size);
 }
 
 static void kanji_check(const char char1, const char end)
@@ -180,95 +47,36 @@ static void kanji_check(const char char1, const char end)
     }
 }
 
-static void type_identification(void **state)
-{
-    // 30-39 numeric
-    // 41-5A, 20, 24, 25, 2A, 2B, 2D, 2E, 2F, 3A alphanumeric
-
-    const char numeric_input[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
-    for (int i = 0; i < sizeof(numeric_input); ++i)
-    {
-        assert_int_equal(input_type(numeric_input[i], (char)rand()), NUMERIC_DATA);
-    }
-    const char alphanumeric_input[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ', '$', '%', '*', '+', '-', '.', '/', ':'};
-    for (int i = 0; i < sizeof(alphanumeric_input); ++i)
-    {
-        assert_int_equal(input_type(alphanumeric_input[i], (char)rand()), ALPHANUMERIC_DATA);
-    }
-
-    for (uint8_t i = 0x81; i <= 0x9F; ++i)
-    {
-        kanji_check((char)i, '\xFC');
-    }
-    for (uint8_t i = 0xE0; i <= 0xEA; ++i)
-    {
-        kanji_check((char)i, '\xFC');
-    }
-    kanji_check('\xEB', '\xBF');
-
-    for (uint8_t i = 0x00; i <= 0x1F; ++i)
-    {
-        assert_int_equal(input_type((char)i, (char)rand()), BYTE_DATA);
-    }
-    assert_int_equal(input_type('\x21', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x22', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x23', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x26', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x27', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x28', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x29', (char)rand()), BYTE_DATA);
-    assert_int_equal(input_type('\x2C', (char)rand()), BYTE_DATA);
-    for (uint8_t i = 0x3B; i <= 0x40; ++i)
-    {
-        assert_int_equal(input_type((char)i, (char)rand()), BYTE_DATA);
-    }
-    for (uint8_t i = 0x5B; i <= 0x80; ++i)
-    {
-        assert_int_equal(input_type((char)i, (char)rand()), BYTE_DATA);
-    }
-    for (uint8_t i = 0xA0; i <= 0xDF; ++i)
-    {
-        assert_int_equal(input_type((char)i, (char)rand()), BYTE_DATA);
-    }
-    for (uint8_t i = 0xEC; i > 0; ++i)
-    {
-        assert_int_equal(input_type((char)i, (char)rand()), BYTE_DATA);
-    }
-}
-
-static void encoding_lengths(void **state)
-{
-    assert_int_equal(encoding_size(NUMERIC_DATA, 12), 40);
-    assert_int_equal(encoding_size(NUMERIC_DATA, 16), 54);
-    assert_int_equal(encoding_size(NUMERIC_DATA, 20), 67);
-    assert_int_equal(encoding_size(ALPHANUMERIC_DATA, 23), 127);
-    assert_int_equal(encoding_size(ALPHANUMERIC_DATA, 14), 77);
-    assert_int_equal(encoding_size(BYTE_DATA, 23), 184);
-    assert_int_equal(encoding_size(KANJI_DATA, 24), 156);
-}
-
 static void input_parsing(void **state)
 {
-    const char *const basic_input = "12345";
-    size_t capacity = 1;
-    struct encoding_run_t *run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
-    struct encoding_run_t *old_ptr = run_ptr;
+    const char *const numeric_input = "1234567890";
+    size_t capacity = 2;
     size_t size = 0;
-    parse_input(basic_input, &run_ptr, &capacity, &size);
-    assert_int_equal(capacity, 1);
+    struct encoding_run_t *run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
+    parse_input(numeric_input, &run_ptr, &capacity, &size);
+    assert_int_equal(capacity, 2);
     assert_int_equal(size, 1);
     assert_int_equal(run_ptr[0].type, NUMERIC_DATA);
-    assert_int_equal(run_ptr[0].char_count, 5);
-    assert_ptr_equal(capacity, 1);
+    assert_int_equal(run_ptr[0].char_count, 10);
     free(run_ptr);
 
-    capacity = 1;
+    capacity = 2;
     run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
-    old_ptr = run_ptr;
     size = 0;
-    const char mixed_input[8] = {'A', 'B', 'C', '1', 'a', 0x93, 0x5F, '\0'};
+    const char *const alpha_input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+    parse_input(alpha_input, &run_ptr, &capacity, &size);
+    assert_int_equal(capacity, 2);
+    assert_int_equal(size, 1);
+    assert_int_equal(run_ptr[0].type, ALPHANUMERIC_DATA);
+    assert_int_equal(run_ptr[0].char_count, 35);
+    free(run_ptr);
+
+    capacity = 2;
+    run_ptr = malloc(capacity * sizeof(struct encoding_run_t));
+    size = 0;
+    const char mixed_input[10] = {'A', 'B', 'C', '1', 'a', 0x93U, 0x5FU, 0xEBU, 0xBFU, '\0'};
     parse_input(mixed_input, &run_ptr, &capacity, &size);
-    assert_int_equal(capacity, 4);
+    assert_int_equal(capacity, 8);
     assert_int_equal(size, 4);
     assert_int_equal(run_ptr[0].type, ALPHANUMERIC_DATA);
     assert_int_equal(run_ptr[0].char_count, 3);
@@ -277,184 +85,141 @@ static void input_parsing(void **state)
     assert_int_equal(run_ptr[2].type, BYTE_DATA);
     assert_int_equal(run_ptr[2].char_count, 1);
     assert_int_equal(run_ptr[3].type, KANJI_DATA);
-    assert_int_equal(run_ptr[3].char_count, 1);
-    assert_ptr_not_equal(capacity, 2);
+    assert_int_equal(run_ptr[3].char_count, 2);
     free(run_ptr);
 }
 
 static void input_optimisation(void **state)
 {
-    // 7 header indices, 4uQR, 3 versions
-    assert_int_equal(merge_to_alphanumeric(1, BYTE_DATA, BYTE_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(merge_to_alphanumeric(1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(merge_to_alphanumeric(1, KANJI_DATA, KANJI_DATA, KANJI_DATA, 2), UNABLE_TO_MERGE);
-    assert_int_equal(merge_to_byte(1, KANJI_DATA, KANJI_DATA, BYTE_DATA, 2), UNABLE_TO_MERGE);
-
-    int num_to_alpha_limits[6][4] = {{2, 3, 4, 5}, {2, 3, 5, 6}, {4, 5, 7, 8}, {6, 7, 12, 13}, {7, 8, 14, 15}, {8, 9, 16, 17}};
-
-    for (int i = 0; i < 6; ++i)
+    int h;
+    int module_count = 0;
     {
-        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_alphanumeric(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(merge_to_alphanumeric(i + 1, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_alphanumeric(i + 1, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_alpha_limits[i][3]), DO_NOT_MERGE);
+        struct encoding_run_t test_data[] = {
+            {ALPHANUMERIC_DATA, 1},
+            {NUMERIC_DATA, 3},
+            {NUMERIC_DATA, 0}};
+        size_t test_size = 2;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 1);
+        assert_int_equal(test_data[1].type, NUMERIC_DATA);
+        assert_int_equal(test_data[1].char_count, 3);
+        assert_int_equal(module_count, 25);
+        assert_int_equal(test_size, 2);
+        assert_int_equal(h, 1);
+        test_data[1].char_count = 2;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 3);
+        assert_int_equal(module_count, 21);
+        assert_int_equal(test_size, 1);
+        assert_int_equal(h, 1);
     }
-
-    int num_to_byte_limits[5][4] = {{1, 2, 2, 3}, {1, 2, 3, 4}, {2, 3, 5, 6}, {3, 4, 7, 8}, {3, 4, 8, 9}};
-
-    for (int i = 0; i < 5; ++i)
     {
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, NUMERIC_DATA, num_to_byte_limits[i][3]), DO_NOT_MERGE);
+        struct encoding_run_t test_data[] = {
+            {NUMERIC_DATA, 3},
+            {ALPHANUMERIC_DATA, 1},
+            {ALPHANUMERIC_DATA, 0}};
+        size_t test_size = 2;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, NUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 3);
+        assert_int_equal(test_data[1].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[1].char_count, 1);
+        assert_int_equal(module_count, 25);
+        assert_int_equal(test_size, 2);
+        assert_int_equal(h, 1);
+        test_data[0].char_count = 2;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 3);
+        assert_int_equal(module_count, 21);
+        assert_int_equal(test_size, 1);
+        assert_int_equal(h, 1);
     }
-
-    int alpha_to_byte_limits[5][4] = {{2, 3, 4, 5}, {3, 4, 6, 7}, {5, 6, 9, 10}, {5, 6, 13, 14}, {6, 7, 14, 15}};
-
-    for (int i = 0; i < 5; ++i)
     {
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, ALPHANUMERIC_DATA, alpha_to_byte_limits[i][3]), DO_NOT_MERGE);
+        struct encoding_run_t test_data[] = {
+            {ALPHANUMERIC_DATA, 1},
+            {NUMERIC_DATA, 7},
+            {ALPHANUMERIC_DATA, 1},
+            {ALPHANUMERIC_DATA, 0}};
+        size_t test_size = 3;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 1);
+        assert_int_equal(test_data[1].type, NUMERIC_DATA);
+        assert_int_equal(test_data[1].char_count, 7);
+        assert_int_equal(test_data[2].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[2].char_count, 1);
+        assert_int_equal(module_count, 55);
+        assert_int_equal(test_size, 3);
+        assert_int_equal(h, 2);
+        test_data[1].char_count = 6;
+        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
+        assert_int_equal(test_data[0].char_count, 8);
+        assert_int_equal(module_count, 50);
+        assert_int_equal(test_size, 1);
+        assert_int_equal(h, 2);
     }
+}
 
-    int kanji_to_byte_limits[5][4] = {{2, 4, 6, 8}, {4, 6, 8, 10}, {6, 8, 14, 16}, {8, 10, 22, 24}, {10, 12, 22, 24}};
+static void input_encoding(void **state)
+{
+    uint8_t test_buf[1500];
+    struct buffer_t buf = {.bit_index = 0, .byte_index = 0, .size = sizeof(test_buf), .data = test_buf};
 
-    for (int i = 0; i < 5; ++i)
-    {
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, ALPHANUMERIC_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][0]), MERGE_WITH_NEXT);
-        assert_int_equal(merge_to_byte(i + 2, ALPHANUMERIC_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][1]), DO_NOT_MERGE);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][2]), MERGE_WITH_LAST);
-        assert_int_equal(merge_to_byte(i + 2, BYTE_DATA, BYTE_DATA, KANJI_DATA, kanji_to_byte_limits[i][3]), DO_NOT_MERGE);
-    }
+    struct encoding_run_t encodings[4] = {
+        {.type = NUMERIC_DATA, .char_count = 4},
+        {.type = ALPHANUMERIC_DATA, .char_count = 3},
+        {.type = BYTE_DATA, .char_count = 4},
+        {.type = KANJI_DATA, .char_count = 1}};
 
-    // Merge data to minimise bits required
-    size_t n_to_a[6][2] = {{3, 5}, {3, 6}, {5, 8}, {7, 13}, {8, 15}, {9, 17}};
-    for (int i = 0; i < 6; ++i)
-    {
-        struct encoding_run_t merge[] = {{ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][1] - 1}, {ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][0] - 1}, {BYTE_DATA, 1}};
-        struct encoding_run_t no_merge[] = {{ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][1]}, {ALPHANUMERIC_DATA, 1}, {NUMERIC_DATA, n_to_a[i][0]}, {BYTE_DATA, 1}};
-        merge_data(i + 1, merge, 5, merge_to_alphanumeric);
-        merge_data(i + 1, no_merge, 5, merge_to_alphanumeric);
-        assert_int_equal(merge[0].char_count, 0);
-        assert_int_equal(merge[1].char_count, 0);
-        assert_int_equal(merge[2].char_count, 0);
-        assert_int_equal(merge[3].type, ALPHANUMERIC_DATA);
-        assert_int_equal(merge[3].char_count, n_to_a[i][0] + n_to_a[i][1]);
-        assert_int_equal(merge[4].type, BYTE_DATA);
-        assert_int_equal(merge[4].char_count, 1);
-        assert_int_equal(no_merge[0].type, ALPHANUMERIC_DATA);
-        assert_int_equal(no_merge[0].char_count, 1);
-        assert_int_equal(no_merge[1].type, NUMERIC_DATA);
-        assert_int_equal(no_merge[1].char_count, n_to_a[i][1]);
-        assert_int_equal(no_merge[2].type, ALPHANUMERIC_DATA);
-        assert_int_equal(no_merge[2].char_count, 1);
-        assert_int_equal(no_merge[3].type, NUMERIC_DATA);
-        assert_int_equal(no_merge[3].char_count, n_to_a[i][0]);
-        assert_int_equal(no_merge[4].type, BYTE_DATA);
-        assert_int_equal(no_merge[4].char_count, 1);
-    }
+    const char *const m1_test = {"1234"};
+    const char *const m2_test = {"1234ABC"};
+    const char all_test[14] = {'1', '2', '3', '4', 'A', 'B', 'C', 't', 'e', 's', 't', 0x93, 0x5F, '\0'};
 
-    size_t n_to_b[5][2] = {{2, 3}, {2, 4}, {3, 6}, {4, 8}, {4, 9}};
-    for (int i = 0; i < 5; ++i)
-    {
-        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][1] - 1}, {BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][0] - 1}, {KANJI_DATA, 50}};
-        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][1]}, {BYTE_DATA, 1}, {NUMERIC_DATA, n_to_b[i][0]}, {KANJI_DATA, 50}};
-        merge_data(i + 2, merge, 5, merge_to_byte);
-        merge_data(i + 2, no_merge, 5, merge_to_byte);
-        assert_int_equal(merge[0].char_count, 0);
-        assert_int_equal(merge[1].char_count, 0);
-        assert_int_equal(merge[2].char_count, 0);
-        assert_int_equal(merge[3].type, BYTE_DATA);
-        assert_int_equal(merge[3].char_count, n_to_b[i][0] + n_to_b[i][1]);
-        assert_int_equal(merge[4].type, KANJI_DATA);
-        assert_int_equal(merge[4].char_count, 50);
-        assert_int_equal(no_merge[0].type, BYTE_DATA);
-        assert_int_equal(no_merge[0].char_count, 1);
-        assert_int_equal(no_merge[1].type, NUMERIC_DATA);
-        assert_int_equal(no_merge[1].char_count, n_to_b[i][1]);
-        assert_int_equal(no_merge[2].type, BYTE_DATA);
-        assert_int_equal(no_merge[2].char_count, 1);
-        assert_int_equal(no_merge[3].type, NUMERIC_DATA);
-        assert_int_equal(no_merge[3].char_count, n_to_b[i][0]);
-        assert_int_equal(no_merge[4].type, KANJI_DATA);
-        assert_int_equal(no_merge[4].char_count, 50);
-    }
+    int module_count = 17;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_MICRO, 0, CORRECTION_LEVEL_L, module_count, m1_test, encodings, 1, &buf);
+    uint8_t m1_check[3] = {0x83U, 0xDAU, 0x00U}; // TODO: Padding check
+    assert_memory_equal(test_buf, m1_check, 3);
 
-    size_t a_to_b[5][2] = {{3, 5}, {4, 7}, {6, 10}, {6, 14}, {7, 15}};
-    for (int i = 0; i < 5; ++i)
-    {
-        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][1] - 1}, {BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][0] - 1}, {KANJI_DATA, 50}};
-        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][1]}, {BYTE_DATA, 1}, {ALPHANUMERIC_DATA, a_to_b[i][0]}, {KANJI_DATA, 50}};
-        merge_data(i + 2, merge, 5, merge_to_byte);
-        merge_data(i + 2, no_merge, 5, merge_to_byte);
-        assert_int_equal(merge[0].char_count, 0);
-        assert_int_equal(merge[1].char_count, 0);
-        assert_int_equal(merge[2].char_count, 0);
-        assert_int_equal(merge[3].type, BYTE_DATA);
-        assert_int_equal(merge[3].char_count, a_to_b[i][0] + a_to_b[i][1]);
-        assert_int_equal(merge[4].type, KANJI_DATA);
-        assert_int_equal(merge[4].char_count, 50);
-        assert_int_equal(no_merge[0].type, BYTE_DATA);
-        assert_int_equal(no_merge[0].char_count, 1);
-        assert_int_equal(no_merge[1].type, ALPHANUMERIC_DATA);
-        assert_int_equal(no_merge[1].char_count, a_to_b[i][1]);
-        assert_int_equal(no_merge[2].type, BYTE_DATA);
-        assert_int_equal(no_merge[2].char_count, 1);
-        assert_int_equal(no_merge[3].type, ALPHANUMERIC_DATA);
-        assert_int_equal(no_merge[3].char_count, a_to_b[i][0]);
-        assert_int_equal(no_merge[4].type, KANJI_DATA);
-        assert_int_equal(no_merge[4].char_count, 50);
-    }
+    module_count = 40;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_MICRO, 1, CORRECTION_LEVEL_L, module_count, m2_test, encodings, 2, &buf);
+    uint8_t m2_check[6] = {0x20U, 0xF6U, 0x96U, 0x73U, 0x4CU, 0x00U}; // TODO: Padding check
+    assert_memory_equal(test_buf, m2_check, 6);
 
-    size_t k_to_b[5][2] = {{4, 8}, {6, 10}, {8, 16}, {10, 24}, {12, 24}};
-    for (int i = 0; i < 5; ++i)
-    {
-        struct encoding_run_t merge[] = {{BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][1] - 2}, {BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][0] - 2}, {NUMERIC_DATA, 10}};
-        struct encoding_run_t no_merge[] = {{BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][1]}, {BYTE_DATA, 1}, {KANJI_DATA, k_to_b[i][0]}, {NUMERIC_DATA, 10}};
-        merge_data(i + 2, merge, 5, merge_to_byte);
-        merge_data(i + 2, no_merge, 5, merge_to_byte);
-        assert_int_equal(merge[0].char_count, 0);
-        assert_int_equal(merge[1].char_count, 0);
-        assert_int_equal(merge[2].char_count, 0);
-        assert_int_equal(merge[3].type, BYTE_DATA);
-        assert_int_equal(merge[3].char_count, k_to_b[i][0] + k_to_b[i][1] - 2);
-        assert_int_equal(merge[4].type, NUMERIC_DATA);
-        assert_int_equal(merge[4].char_count, 10);
-        assert_int_equal(no_merge[0].type, BYTE_DATA);
-        assert_int_equal(no_merge[0].char_count, 1);
-        assert_int_equal(no_merge[1].type, KANJI_DATA);
-        assert_int_equal(no_merge[1].char_count, k_to_b[i][1]);
-        assert_int_equal(no_merge[2].type, BYTE_DATA);
-        assert_int_equal(no_merge[2].char_count, 1);
-        assert_int_equal(no_merge[3].type, KANJI_DATA);
-        assert_int_equal(no_merge[3].char_count, k_to_b[i][0]);
-        assert_int_equal(no_merge[4].type, NUMERIC_DATA);
-        assert_int_equal(no_merge[4].char_count, 10);
-    }
+    module_count = 100;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_MICRO, 2, CORRECTION_LEVEL_L, module_count, all_test, encodings, 4, &buf);
+    uint8_t m3_check[13] = {0x08U, 0x3DU, 0xA2U, 0x67U, 0x34U, 0xC9U, 0x1DU, 0x19U, 0x5CU, 0xDDU, 0x32U, 0xD9, 0xF0}; // TODO: Padding check
+    assert_memory_equal(test_buf, m3_check, 13);
 
-    // Determine correct QR type for input
-    uint8_t data_types[5] = {NUMERIC_MASK, NUMERIC_MASK | ALPHANUMERIC_MASK, KANJI_MASK, BYTE_MASK, BYTE_MASK};
-    uint8_t correction_levels[5] = {CORRECTION_LEVEL_L, CORRECTION_LEVEL_L, CORRECTION_LEVEL_L, CORRECTION_LEVEL_Q, CORRECTION_LEVEL_H};
-    struct encoding_run_t input[5] = {{NUMERIC_DATA, 5}, {ALPHANUMERIC_DATA, 5}, {KANJI_DATA, 4}, {BYTE_DATA, 4}, {BYTE_DATA, 10}};
-    int headers[5] = {0,1,2,3,4};
-    for (int i = 0; i < 5; ++i)
-    {
-        struct encoding_run_t output[5];
-        int module_count = 0;
-        int header = optimise_input(&input[i], 1, correction_levels[i], data_types[i], output, &module_count);
-        assert_int_equal(header, headers[i]);
-    }
+    module_count = 108;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_MICRO, 3, CORRECTION_LEVEL_L, module_count, all_test, encodings, 4, &buf);
+    uint8_t m4_check[14] = {0x02U, 0x0FU, 0x68U, 0x46U, 0x73U, 0x4CU, 0x44U, 0x74U, 0x65U, 0x73U, 0x74U, 0x62U, 0xD9U, 0xF0U}; // TODO: Padding check
+    assert_memory_equal(test_buf, m4_check, 14);
+
+    module_count = 127;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_STANDARD, 0, CORRECTION_LEVEL_L, module_count, all_test, encodings, 4, &buf);
+    uint8_t v1_9_check[16] = {0x10U, 0x10U, 0x7BU, 0x42U, 0x01U, 0x9CU, 0xD3U, 0x10U, 0x11U, 0xD1U, 0x95U, 0xCDU, 0xD2U, 0x00U, 0x5BU, 0x3EU};
+    assert_memory_equal(test_buf, v1_9_check, 16);
+
+    module_count = 141;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_STANDARD, 9, CORRECTION_LEVEL_L, module_count, all_test, encodings, 4, &buf);
+    uint8_t v10_26_check[18] = {0x10U, 0x04U, 0x1EU, 0xD0U, 0x80U, 0x19U, 0xCDU, 0x31U, 0x00U, 0x01U, 0x1DU, 0x19U, 0x5CU, 0xDDU, 0x20U, 0x01U, 0x6CU, 0xF8U};
+    assert_memory_equal(test_buf, v10_26_check, 18);
+
+    module_count = 147;
+    clear_buffer(&buf);
+    qr_encode_input(QR_SIZE_STANDARD, 26, CORRECTION_LEVEL_L, module_count, all_test, encodings, 4, &buf);
+    uint8_t v27_40_check[19] = {0x10U, 0x01U, 0x07U, 0xB4U, 0x20U, 0x01U, 0x9CU, 0xD3U, 0x10U, 0x00U, 0x11U, 0xD1U, 0x95U, 0xCDU, 0xD2U, 0x00U, 0x05U, 0xB3U, 0xE0U};
+    assert_memory_equal(test_buf, v27_40_check, 19);
 }
 
 static void error_code_generation(void **state)
@@ -730,26 +495,143 @@ void mask_tests(void **state)
     assert_int_equal(run, 1);
 }
 
+void data_size_calculations(void **state)
+{
+    int version;
+    size_t data;
+    size_t error;
+    const size_t m_qr_data_words[4][4] = {{0, 3, 0, 0}, {4, 5, 0, 0}, {9, 11, 0, 0}, {14, 16, 0, 10}}; // M L H Q
+    for (int version_lookup_index = 0; version_lookup_index < 4; ++version_lookup_index)
+    {
+        for (int correction_level = 0; correction_level < 4; ++correction_level)
+        {
+            enum code_type_t type = compute_data_word_sizes(correction_level, 0, version_lookup_index, &version, &data, &error);
+            assert_int_equal(type, QR_SIZE_MICRO);
+            assert_int_equal(version, version_lookup_index);
+            assert_int_equal(data, m_qr_data_words[version][correction_level]);
+            assert_int_equal(error, micro_error_words[version][correction_level]);
+        }
+    }
+
+    const size_t qr_data_words[40][4] = {
+        {16, 19, 9, 13},
+        {28, 34, 16, 22},
+        {44, 55, 26, 34},
+        {64, 80, 36, 48},
+        {86, 108, 46, 62},
+        {108, 136, 60, 76},
+        {124, 156, 66, 88},
+        {154, 194, 86, 110},
+        {182, 232, 100, 132},
+        {216, 274, 122, 154},
+        {254, 324, 140, 180},
+        {290, 370, 158, 206},
+        {334, 428, 180, 244},
+        {365, 461, 197, 261},
+        {415, 523, 223, 295},
+        {453, 589, 253, 325},
+        {507, 647, 283, 367},
+        {563, 721, 313, 397},
+        {627, 795, 341, 445},
+        {669, 861, 385, 485},
+        {714, 932, 406, 512},
+        {782, 1006, 442, 568},
+        {860, 1094, 464, 614},
+        {914, 1174, 514, 664},
+        {1000, 1276, 538, 718},
+        {1062, 1370, 596, 754},
+        {1128, 1468, 628, 808},
+        {1193, 1531, 661, 871},
+        {1267, 1631, 701, 911},
+        {1373, 1735, 745, 985},
+        {1455, 1843, 793, 1033},
+        {1541, 1955, 845, 1115},
+        {1631, 2071, 901, 1171},
+        {1725, 2191, 961, 1231},
+        {1812, 2306, 986, 1286},
+        {1914, 2434, 1054, 1354},
+        {1992, 2566, 1096, 1426},
+        {2102, 2702, 1142, 1502},
+        {2216, 2812, 1222, 1582},
+        {2334, 2956, 1276, 1666}};
+    const int data_bits[40][4] = {
+        {128, 152, 72, 104},
+        {224, 272, 128, 176},
+        {352, 440, 208, 272},
+        {512, 640, 288, 384},
+        {688, 864, 368, 496},
+        {864, 1088, 480, 608},
+        {992, 1248, 528, 704},
+        {1232, 1552, 688, 880},
+        {1456, 1856, 800, 1056},
+        {1728, 2192, 976, 1232},
+        {2032, 2592, 1120, 1440},
+        {2320, 2960, 1264, 1648},
+        {2672, 3424, 1440, 1952},
+        {2920, 3688, 1576, 2088},
+        {3320, 4184, 1784, 2360},
+        {3624, 4712, 2024, 2600},
+        {4056, 5176, 2264, 2936},
+        {4504, 5768, 2504, 3176},
+        {5016, 6360, 2728, 3560},
+        {5352, 6888, 3080, 3880},
+        {5712, 7456, 3248, 4096},
+        {6256, 8048, 3536, 4544},
+        {6880, 8752, 3712, 4912},
+        {7312, 9392, 4112, 5312},
+        {8000, 10208, 4304, 5744},
+        {8496, 10960, 4768, 6032},
+        {9024, 11744, 5024, 6464},
+        {9544, 12248, 5288, 6968},
+        {10136, 13048, 5608, 7288},
+        {10984, 13880, 5960, 7880},
+        {11640, 14744, 6344, 8264},
+        {12328, 15640, 6760, 8920},
+        {13048, 16568, 7208, 9368},
+        {13800, 17528, 7688, 9848},
+        {14496, 18448, 7888, 10288},
+        {15312, 19472, 8432, 10832},
+        {15936, 20528, 8768, 11408},
+        {16816, 21616, 9136, 12016},
+        {17728, 22496, 9776, 12656},
+        {18672, 23648, 10208, 13328}};
+    for (int v = 0; v < 40; ++v)
+    {
+        for (int correction_level = 0; correction_level < 4; ++correction_level)
+        {
+            int version_lookup_index = 4;
+            if (v >= 9)
+            {
+                version_lookup_index = 5;
+            }
+            if (v >= 26)
+            {
+                version_lookup_index = 6;
+            }
+            enum code_type_t type = compute_data_word_sizes(correction_level, data_bits[v][correction_level], version_lookup_index, &version, &data, &error);
+            assert_int_equal(type, QR_SIZE_STANDARD);
+            assert_int_equal(version, v);
+            assert_int_equal(data, qr_data_words[v][correction_level]);
+            const int *const blocks = error_blocks[version][correction_level];
+            assert_int_equal(error, blocks[0] * (blocks[1] + blocks[3]));
+        }
+    }
+}
+
 int main()
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(input_parsing),
-        cmocka_unit_test(data_buffer_write),
-        cmocka_unit_test(data_buffer_read),
-        cmocka_unit_test(numeric_encoding),
-        cmocka_unit_test(alphanumeric_encoding),
-        cmocka_unit_test(kanji_encoding),
-        cmocka_unit_test(byte_encoding),
-        cmocka_unit_test(type_identification),
-        cmocka_unit_test(encoding_lengths),
         cmocka_unit_test(input_optimisation),
+        cmocka_unit_test(input_encoding),
         cmocka_unit_test(error_code_generation),
         cmocka_unit_test(alignment_positions),
         cmocka_unit_test(data_capacity),
         cmocka_unit_test(image_fill),
         cmocka_unit_test(mask_tests),
         cmocka_unit_test(gf256_lookup_generator),
-        cmocka_unit_test(error_polynomial_generator)};
+        cmocka_unit_test(error_polynomial_generator),
+        cmocka_unit_test(data_size_calculations)};
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

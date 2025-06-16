@@ -4,7 +4,7 @@
 
 #include "qr.h"
 
-#define EVAL_BUFFER_SIZE 32
+#define EVAL_BUFFER_SIZE 64
 
 #define VERSION_OFFSET 1
 #define VERSION_MIN 0
@@ -18,6 +18,8 @@
 #define GROUP_1_BLOCK_SIZE 2
 #define GROUP_2_BLOCK_COUNT 3
 #define GROUP_2_BLOCK_SIZE 4
+
+#define QR_TYPE_INDICATOR_SIZE 4
 
 #define ALIGNMENT_POSITIONS_MAX 7
 #define ALIGNMENT_PATTERN_OFFSET 2
@@ -49,6 +51,7 @@
 
 enum char_encoding_t
 {
+    NO_DATA = -1,
     BYTE_DATA = 2,
     NUMERIC_DATA = 0,
     ALPHANUMERIC_DATA = 1,
@@ -225,11 +228,9 @@ static inline void encode_numeric(const struct buffer_t input, struct buffer_t *
     switch (input.size - index)
     {
     case 2:
-        printf("7 residual bits\n");
         add_to_buffer((uint16_t)((input.data[index] - '0') * 10 + input.data[index + 1] - '0'), 7, output);
         break;
     case 1:
-        printf("4 residual bits\n");
         add_to_buffer(input.data[index] - '0', 4, output);
         break;
     default:
@@ -342,62 +343,11 @@ size_t encoding_size(const enum char_encoding_t type, const size_t char_count)
         return (char_count >> 1) * BITS_PER_KANJI_CHAR;
     case ALPHANUMERIC_DATA:
         return (char_count >> 1) * BITS_PER_TWO_ALPHANUMERIC_CHARS + ((char_count & 0x01U) ? BITS_PER_SINGLE_ALPHANUMERIC_CHAR : 0);
+    case NO_DATA:
+        return 0; // Should never happen
     }
     return 0; // Should never happen
 }
-
-enum merge_t
-{
-    UNABLE_TO_MERGE,
-    DO_NOT_MERGE,
-    MERGE_WITH_LAST,
-    MERGE_WITH_NEXT
-};
-
-enum merge_t merge_data_check(const int header_index, const enum char_encoding_t last_type, const enum char_encoding_t next_type, const enum char_encoding_t data_type, const size_t char_count, const enum char_encoding_t merge_type)
-{
-    size_t cost = (size_t)header_sizes[header_index][data_type] + encoding_size(data_type, char_count);
-    size_t merge_cost = encoding_size(merge_type, char_count);
-
-    // printf("Cost (%s): %lu ", BYTE_DATA == data_type ? "Byte" : KANJI_DATA == data_type ? "Kanji" : ALPHANUMERIC_DATA == data_type ? "Alpha" : "Num", cost);
-    if (last_type == merge_type)
-    {
-        if (next_type == merge_type)
-        {
-            cost += (size_t)header_sizes[header_index][merge_type];
-            // printf("(+HDR %d) ", header_sizes[header_index][merge_type]);
-        }
-        // printf("/ %lu collapse with previous %s data? %s\n", merge_cost, BYTE_DATA == merge_type ? "Byte" : KANJI_DATA == merge_type ? "Kanji" : ALPHANUMERIC_DATA == merge_type ? "Alpha" : "Num", cost > merge_cost ? "yes" : "no");
-        return (cost > merge_cost) ? MERGE_WITH_LAST : DO_NOT_MERGE;
-    }
-    else if (next_type == merge_type)
-    {
-        // printf("/ %lu collapse with following %s data? %s\n", merge_cost, BYTE_DATA == merge_type ? "Byte" : KANJI_DATA == merge_type ? "Kanji" : ALPHANUMERIC_DATA == merge_type ? "Alpha" : "Num", cost > merge_cost ? "yes" : "no");
-        return (cost > merge_cost) ? MERGE_WITH_NEXT : DO_NOT_MERGE;
-    }
-    // printf("unable to merge\n");
-    return UNABLE_TO_MERGE;
-}
-
-enum merge_t merge_to_alphanumeric(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
-{
-    if (NUMERIC_DATA == type)
-    {
-        return merge_data_check(header_index, last, next, type, char_count, ALPHANUMERIC_DATA);
-    }
-    return UNABLE_TO_MERGE;
-}
-
-enum merge_t merge_to_byte(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count)
-{
-    if (BYTE_DATA != type)
-    {
-        return merge_data_check(header_index, last, next, type, char_count, BYTE_DATA);
-    }
-    return UNABLE_TO_MERGE;
-}
-
-typedef enum merge_t (*comparator_t)(const int header_index, const enum char_encoding_t last, const enum char_encoding_t next, const enum char_encoding_t type, const size_t char_count);
 
 struct encoding_run_t
 {
@@ -405,33 +355,67 @@ struct encoding_run_t
     size_t char_count;
 };
 
-void merge_data(const int header_index, struct encoding_run_t *const list, const size_t list_size, const comparator_t eval_callback)
+typedef int (*cmp_t)(const enum char_encoding_t t);
+
+int is_num(const enum char_encoding_t t)
 {
-    size_t index = 1;
-    while (index < list_size)
+    return NUMERIC_DATA == t;
+}
+
+int is_not_byte(const enum char_encoding_t t)
+{
+    return BYTE_DATA != t;
+}
+
+size_t merge_data(const int header_index, const cmp_t can_merge, const enum char_encoding_t merge_target, struct encoding_run_t *const list, const size_t list_size)
+{
+    if (list_size < 2)
     {
-        if (list[index].type == list[index - 1].type)
+        return list_size;
+    }
+    size_t index = 0;
+    size_t end = 1;
+    while (end < list_size)
+    {
+        if (can_merge(list[index].type) && (list[end].type == merge_target))
         {
-            list[index].char_count += list[index - 1].char_count;
-            list[index - 1].char_count = 0;
-            ++index;
-            continue;
+            const size_t cost = encoding_size(merge_target, list[index].char_count);
+            size_t new_cost = (size_t)header_sizes[header_index][list[index].type] + encoding_size(list[index].type, list[index].char_count);
+            if (new_cost >= cost)
+            {
+                list[index].type = list[end].type;
+                list[index].char_count += list[end].char_count;
+                ++end;
+                continue;
+            }
         }
-        enum merge_t merge = eval_callback(header_index, list[index - 1].type, list[index + 1].type, list[index].type, list[index].char_count);
-        if (MERGE_WITH_LAST == merge)
+        else if (can_merge(list[end].type) && (list[index].type == merge_target))
         {
-            list[index].type = list[index - 1].type;
-            list[index].char_count += list[index - 1].char_count;
-            list[index - 1].char_count = 0;
-        }
-        if (MERGE_WITH_NEXT == merge)
-        {
-            list[index + 1].char_count += list[index].char_count;
-            list[index].char_count = 0;
-            ++index;
+            const size_t cost = encoding_size(merge_target, list[end].char_count);
+            size_t new_cost = (size_t)header_sizes[header_index][list[end].type] + encoding_size(list[end].type, list[end].char_count);
+            if (list[end + 1].type == merge_target)
+            {
+                new_cost += (size_t)header_sizes[header_index][merge_target];
+                if (new_cost >= cost)
+                {
+                    list[index].char_count += list[end].char_count + list[end + 1].char_count;
+                    end += 2;
+                    continue;
+                }
+            }
+            else if (new_cost >= cost)
+            {
+                list[index].char_count += list[end].char_count;
+                ++end;
+                continue;
+            }
         }
         ++index;
+        struct encoding_run_t temp = list[end];
+        list[index] = temp;
+        ++end;
     }
+    return ++index;
 }
 
 void calculate_error_codes(const int data_word_count, const int error_word_count, const uint8_t (*const gf256_lookup)[2], const int generator_start, const int generator_end, const uint8_t *const generator, const uint8_t *const input, uint8_t *error_words)
@@ -689,9 +673,10 @@ int repeat_score(const int module, int *const last_module, int *const run)
     return score;
 }
 
-uint8_t parse_input(const char *const input, struct encoding_run_t **encoding_list_ptr, size_t *const list_capacity, size_t *const list_size)
+// Build list of run/length values for input types. List must terminate with a "null" entry (char_count = 0)
+uint8_t parse_input(const char *const input, struct encoding_run_t **list_ptr, size_t *const list_capacity, size_t *const list_size)
 {
-    struct encoding_run_t *encoding_list = *encoding_list_ptr;
+    struct encoding_run_t *encoding_list = *list_ptr;
     uint8_t data_types = 0;
     size_t run = 0;
     size_t char_count = 0;
@@ -707,11 +692,11 @@ uint8_t parse_input(const char *const input, struct encoding_run_t **encoding_li
         }
         else
         {
-            if (*list_size >= *list_capacity - 1)
+            if (*list_size >= *list_capacity - 2)
             {
                 *list_capacity <<= 1;
-                *encoding_list_ptr = (struct encoding_run_t *)realloc(*encoding_list_ptr, *list_capacity * sizeof(struct encoding_run_t));
-                encoding_list = *encoding_list_ptr;
+                *list_ptr = (struct encoding_run_t *)realloc(*list_ptr, *list_capacity * sizeof(struct encoding_run_t));
+                encoding_list = *list_ptr;
                 if (NULL == encoding_list)
                 {
                     printf("Failed to increase buffer list size\n");
@@ -735,16 +720,16 @@ uint8_t parse_input(const char *const input, struct encoding_run_t **encoding_li
         }
         ++char_count;
     }
-
-    printf("Input: %lu bytes\n", char_count);
     encoding_list[*list_size].type = type;
     encoding_list[*list_size].char_count = run;
     ++(*list_size);
+    encoding_list[*list_size].type = type;
+    encoding_list[*list_size].char_count = 0;
 
     return data_types;
 }
 
-int optimise_input(const struct encoding_run_t *const encoding_list, const size_t list_size, const enum error_correction_level_t correction_level, const uint8_t data_types, struct encoding_run_t *const final_list, int *const module_count)
+int optimise_input(const uint8_t data_types, const enum error_correction_level_t correction_level, struct encoding_run_t *const encoding_list, size_t *const list_size, int *const module_count)
 {
     int header_index = 4;
     if (CORRECTION_LEVEL_H != correction_level)
@@ -766,7 +751,6 @@ int optimise_input(const struct encoding_run_t *const encoding_list, const size_
     {
         header_index = 0;
     }
-    printf("Starting index: %d\n", header_index);
 
     // M1, M2, M3, M4, 1-9, 10-26, 27-40
     int module_limits[7] = {
@@ -781,25 +765,17 @@ int optimise_input(const struct encoding_run_t *const encoding_list, const size_
     {
         if (*module_count < module_limits[header_index])
         {
-            memcpy(final_list, encoding_list, list_size * sizeof(struct encoding_run_t));
-            final_list[list_size].type = encoding_list[list_size].type;
-            final_list[list_size].char_count = 0;
-            merge_data(header_index, final_list, list_size, merge_to_alphanumeric);
-            merge_data(header_index, final_list, list_size, merge_to_byte);
+            *list_size = merge_data(header_index, is_num, ALPHANUMERIC_DATA, encoding_list, *list_size);
+            *list_size = merge_data(header_index, is_not_byte, BYTE_DATA, encoding_list, *list_size);
             *module_count = 0;
-            for (int j = 0; j < (int)list_size; ++j)
+            for (size_t j = 0; j < *list_size; ++j)
             {
-                if (final_list[j].char_count > 0)
+                if (encoding_list[j].char_count > 0)
                 {
-                    *module_count += header_sizes[header_index][final_list[j].type];
-                    *module_count += (int)encoding_size(final_list[j].type, final_list[j].char_count);
-                    printf("%s%lu, ", (BYTE_DATA == final_list[j].type) ? "B" : (KANJI_DATA == final_list[j].type)      ? "K"
-                                                                            : (ALPHANUMERIC_DATA == final_list[j].type) ? "A"
-                                                                                                                        : "N",
-                        final_list[j].char_count);
+                    *module_count += header_sizes[header_index][encoding_list[j].type];
+                    *module_count += (int)encoding_size(encoding_list[j].type, encoding_list[j].char_count);
                 }
             }
-            printf("data module total: %d, limit: %d\n", *module_count, module_limits[header_index]);
             if (*module_count <= module_limits[header_index])
             {
                 break;
@@ -840,9 +816,6 @@ enum code_type_t compute_data_word_sizes(const enum error_correction_level_t cor
         *error_word_total = (size_t)(block_data[ERR_WORDS_PER_BLOCK] * (block_data[GROUP_1_BLOCK_COUNT] + block_data[GROUP_2_BLOCK_COUNT]));
     }
 
-    char correction_map[] = {'M', 'L', 'H', 'Q'};
-    printf("Version: %d, %s %c, %lu+%lu data+error words\n", *version + VERSION_OFFSET, QR_SIZE_STANDARD == qr_type ? "QR" : "MicroQR", correction_map[correction_level], *data_word_total, *error_word_total);
-
     return qr_type;
 }
 
@@ -857,29 +830,28 @@ void qr_encode_input(const enum code_type_t qr_type, const int version, const en
         {
             if (QR_SIZE_MICRO == qr_type)
             {
-                uint16_t count_indicator_lengths[4][4] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}};
-                add_to_buffer((uint16_t)final_list[i].type, version, encoder_buffer);
+                uint16_t count_indicator_lengths[4][4] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}}; // Char count indicators
+                add_to_buffer((uint16_t)final_list[i].type, version, encoder_buffer);                              // Mode indicator (N/A for M1)
                 add_to_buffer((uint16_t)final_list[i].char_count, count_indicator_lengths[version][final_list[i].type], encoder_buffer);
             }
             else
             {
                 int count_indicator_lengths[4] = {10, 9, 8, 8};
-                int bits = count_indicator_lengths[final_list[i].type];
+                int bitcount = count_indicator_lengths[final_list[i].type];
                 if (version >= 9)
                 {
-                    bits += 2;
+                    bitcount += 2;
                 }
                 if (version >= 26)
                 {
-                    bits += 2;
+                    bitcount += 2;
                 }
-                if ((BYTE_DATA == final_list[i].type) && (bits > 8))
+                if ((BYTE_DATA == final_list[i].type) && (bitcount > 8))
                 {
-                    bits = 16;
+                    bitcount = 16;
                 }
-                printf("Type: %d Count bits: %d\n", final_list[i].type, bits);
-                add_to_buffer((uint16_t)(1 << final_list[i].type), 4, encoder_buffer);
-                add_to_buffer((uint16_t)final_list[i].char_count, bits, encoder_buffer);
+                add_to_buffer((uint16_t)(1 << final_list[i].type), QR_TYPE_INDICATOR_SIZE, encoder_buffer);
+                add_to_buffer((uint16_t)final_list[i].char_count, bitcount, encoder_buffer);
             }
 
             struct buffer_t temp = {.bit_index = 0, .byte_index = 0, .size = final_list[i].char_count};
@@ -1529,26 +1501,35 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
         free(encoding_list);
         return NULL;
     }
-    
-    struct encoding_run_t *final_list = (struct encoding_run_t *)malloc((list_size + 1) * sizeof(struct encoding_run_t));
+
     int module_count = 0;
-    int header_index = optimise_input(encoding_list, list_size, correction_level, data_types, final_list, &module_count);
+    int header_index = optimise_input(data_types, correction_level, encoding_list, &list_size, &module_count);
     if (header_index > 6)
     {
         printf("Error\n");
         free(encoding_list);
-        free(final_list);
         return NULL;
     }
+
+    for (size_t i = 0; i < list_size; ++i)
+    {
+        printf("%s%lu, ", (BYTE_DATA == encoding_list[i].type) ? "B" : (KANJI_DATA == encoding_list[i].type)      ? "K"
+                                                                   : (ALPHANUMERIC_DATA == encoding_list[i].type) ? "A"
+                                                                                                                  : "N",
+               encoding_list[i].char_count);
+    }
+    printf("%d modules\n", module_count);
 
     size_t data_word_total = 0;
     size_t error_word_total = 0;
     int version = 39;
     enum code_type_t qr_type = compute_data_word_sizes(correction_level, module_count, header_index, &version, &data_word_total, &error_word_total);
+    char correction_map[] = {'M', 'L', 'H', 'Q'};
+    printf("Version: %d, %s %c, %lu+%lu data+error words\n", version + VERSION_OFFSET, QR_SIZE_STANDARD == qr_type ? "QR" : "MicroQR", correction_map[correction_level], data_word_total, error_word_total);
 
     struct buffer_t encoder_buffer = {.bit_index = 0, .byte_index = 0, .size = data_word_total + error_word_total};
     encoder_buffer.data = calloc(encoder_buffer.size, sizeof(uint8_t));
-    qr_encode_input(qr_type, version, correction_level, module_count, buffer, final_list, list_size, &encoder_buffer);
+    qr_encode_input(qr_type, version, correction_level, module_count, buffer, encoding_list, list_size, &encoder_buffer);
     printf("Encoded data: ");
     for (size_t i = 0; i < data_word_total; ++i)
     {
@@ -1594,25 +1575,25 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
     else
     {
         qr_interleave(*block_data, data_word_total, &encoder_buffer, interleaved_data);
-        printf("Interleaved data: ");        
+        printf("Interleaved data: ");
     }
-    
+
     for (size_t i = 0; i < data_word_total + error_word_total; ++i)
     {
         printf("%02x ", interleaved_data[i]);
     }
     printf("\n");
-    
+
     // ================================================================
     // Build Image
     // ================================================================
-    
+
     size_t qr_width = (size_t)(21 + (version << 2));
     if (QR_SIZE_MICRO == qr_type)
     {
         qr_width = (size_t)(11 + (version << 1));
     }
-    
+
     struct buffer_t qr_buffer = {.bit_index = 0, .byte_index = 0, .size = qr_width * qr_width};
     qr_buffer.data = (uint8_t *)calloc(qr_buffer.size, sizeof(uint8_t));
     qr_setup(qr_type, qr_width, n, alignment_positions, &qr_buffer);
@@ -1653,7 +1634,6 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
     free(qr_buffer.data);
     free(interleaved_data);
     free(encoder_buffer.data);
-    free(final_list);
     free(encoding_list);
     return qr_code;
 }
