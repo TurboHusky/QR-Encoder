@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <setjmp.h>
 #include <stdlib.h>
+#include <time.h>
 #include "cmocka.h"
 
 #include "../src/qr.c"
@@ -91,6 +92,33 @@ static void input_parsing(void **state)
 
 static void input_optimisation(void **state)
 {
+    int index;
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 0);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_L);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_M);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_Q);
+    assert_int_equal(index, 3);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_H);
+    assert_int_equal(index, 4);
+
+    index = min_micro_qr_version(ALPHANUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(KANJI_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | KANJI_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | KANJI_MASK | BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+
     int h;
     int module_count = 0;
     {
@@ -99,7 +127,7 @@ static void input_optimisation(void **state)
             {NUMERIC_DATA, 3},
             {NUMERIC_DATA, 0}};
         size_t test_size = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 1);
         assert_int_equal(test_data[1].type, NUMERIC_DATA);
@@ -108,7 +136,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 2);
         assert_int_equal(h, 1);
         test_data[1].char_count = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(module_count, 21);
@@ -121,7 +149,7 @@ static void input_optimisation(void **state)
             {ALPHANUMERIC_DATA, 1},
             {ALPHANUMERIC_DATA, 0}};
         size_t test_size = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, NUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(test_data[1].type, ALPHANUMERIC_DATA);
@@ -130,7 +158,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 2);
         assert_int_equal(h, 1);
         test_data[0].char_count = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(module_count, 21);
@@ -144,7 +172,7 @@ static void input_optimisation(void **state)
             {ALPHANUMERIC_DATA, 1},
             {ALPHANUMERIC_DATA, 0}};
         size_t test_size = 3;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 1);
         assert_int_equal(test_data[1].type, NUMERIC_DATA);
@@ -155,7 +183,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 3);
         assert_int_equal(h, 2);
         test_data[1].char_count = 6;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 8);
         assert_int_equal(module_count, 50);
@@ -500,7 +528,6 @@ void data_size_calculations(void **state)
     int version;
     size_t data;
     size_t error;
-    const size_t m_qr_data_words[4][4] = {{0, 3, 0, 0}, {4, 5, 0, 0}, {9, 11, 0, 0}, {14, 16, 0, 10}}; // M L H Q
     for (int version_lookup_index = 0; version_lookup_index < 4; ++version_lookup_index)
     {
         for (int correction_level = 0; correction_level < 4; ++correction_level)
@@ -508,7 +535,7 @@ void data_size_calculations(void **state)
             enum code_type_t type = compute_data_word_sizes(correction_level, 0, version_lookup_index, &version, &data, &error);
             assert_int_equal(type, QR_SIZE_MICRO);
             assert_int_equal(version, version_lookup_index);
-            assert_int_equal(data, m_qr_data_words[version][correction_level]);
+            assert_int_equal(data, (micro_module_capacities[version][correction_level] + 4) >> 3);
             assert_int_equal(error, micro_error_words[version][correction_level]);
         }
     }
@@ -618,6 +645,226 @@ void data_size_calculations(void **state)
     }
 }
 
+void input_checks(void **state)
+{
+    const char *const input = "12345";
+    struct qr_data_t *result;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, -1, VERSION_AUTO, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, 5, VERSION_AUTO, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, 5, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, 41, input);
+    assert_null(result);
+
+    const char *const micro2 = "ABCDE";
+    const char *const micro3 = "abcde";
+    const char *const micro4 = "abcdefghijklm";
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_NONE);
+    assert_int_equal(result->width, 11);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro2);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro3);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 15);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro4);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_NONE);
+    assert_int_equal(result->width, 11);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 15);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 29);
+    free(result);
+    result = NULL;
+
+    const char quality_l[2954] =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse sem eros, feugiat sit amet dignissim ut, gravida eu massa. Nunc sed ex ante. Phasellus quis lacus vitae justo ullamcorper accumsan. Morbi efficitur tempor metus, sed sodales massa placerat sit amet. Cras mattis erat porta nibh tempus tristique. Nullam sollicitudin dolor rhoncus, dignissim metus at, semper ante. Nulla malesuada faucibus metus, ac interdum purus euismod at. Nulla tincidunt pretium lacus quis bibendum. Sed risus ante, sollicitudin in vestibulum in, rutrum eget felis."
+        "Fusce sollicitudin venenatis felis, eu eleifend lacus tincidunt vel. Sed ac laoreet dolor, eget gravida lectus. Fusce sit amet nunc quis risus tempus semper. Nam eros ligula, aliquet nec risus eu, convallis imperdiet massa. Duis turpis dolor, dictum sit amet eros at, accumsan luctus nisl. Cras libero justo, hendrerit a commodo sed, porta in velit. Nunc id egestas massa, vitae tincidunt tortor. Ut fringilla viverra quam et sollicitudin. Etiam ultrices viverra purus ac egestas. Fusce justo dolor, volutpat nec urna et, congue dapibus lorem. Donec placerat dolor nec quam lobortis, non vestibulum ante aliquam. Vestibulum tincidunt placerat ex sed consequat. Pellentesque at varius magna. Nulla sit amet velit eget ligula vulputate porta."
+        "Etiam lobortis turpis ac leo finibus, eu congue turpis venenatis. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Vestibulum euismod nisl id mauris vulputate, vel euismod dui mollis. Sed vitae neque commodo, porta ante eget, semper nisl. Sed bibendum congue sollicitudin. Pellentesque tincidunt facilisis est, non elementum sapien sagittis blandit. Etiam quam mauris, euismod sed diam in, aliquam pharetra tellus. Cras vestibulum hendrerit purus non aliquam. Sed consectetur molestie nulla scelerisque bibendum. Aenean laoreet, dui at aliquet semper, ipsum magna bibendum eros, eu tincidunt tortor arcu sit amet sem. Proin nec risus nec ligula sollicitudin scelerisque. Donec pharetra, lacus quis hendrerit tincidunt, neque nulla commodo felis, ac lobortis magna lorem in ex. Proin nec accumsan nunc. Suspendisse venenatis nisi in massa tempor bibendum. Praesent at urna tellus."
+        "Morbi purus diam, scelerisque eget nibh volutpat, convallis feugiat est. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Cras ultricies, nisi a placerat lobortis, elit turpis feugiat nibh, a luctus arcu mi quis quam. Aenean lacus mi, fringilla nec risus finibus, tristique hendrerit turpis. Nunc quis justo vehicula dolor convallis facilisis. Fusce commodo nunc mollis tellus dapibus, id fringilla risus aliquam. Sed quis lacus pellentesque, pharetra lectus vel, suscipit turpis. Proin vulputate ultricies elit a molestie. In hac habitasse platea dictumst. Maecenas odio lacus, ultrices nec ligula sit amet, placerat pharetra velit. Aenean ultrices velit non risus viverra faucibus. Mauris ut amet.\0";
+
+    const char quality_m[2332] =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin semper lacus in enim rhoncus, nec eleifend turpis rhoncus. Pellentesque at lacinia lorem. Etiam sodales leo eget arcu pharetra sodales. Sed vitae arcu sed velit iaculis eleifend. Curabitur dapibus mi in eros mollis, sed cursus mauris faucibus. Suspendisse eget tempus est. Pellentesque nec libero id dui tincidunt faucibus eget a purus. Etiam ut feugiat ipsum. Morbi sed nunc tempor, tempor nibh suscipit, mattis risus. Phasellus eget justo fringilla, aliquet ante ac, semper erat. Etiam at nunc malesuada, pharetra odio non, varius arcu. Pellentesque accumsan ante et ligula blandit varius."
+        "Integer non mauris elit. Proin viverra erat auctor euismod volutpat. Quisque dapibus neque eu arcu pellentesque congue. Integer suscipit sapien et ipsum lobortis, sit amet rutrum orci hendrerit. Aliquam at hendrerit velit, et ultrices ipsum. Sed leo leo, tempus ut nibh eu, ultrices porttitor risus. Ut non dictum magna. Vivamus vel feugiat neque. Proin ac quam vehicula lorem pretium facilisis. Nunc orci quam, placerat non lectus et, pellentesque pharetra lectus. Vestibulum commodo pellentesque orci id hendrerit. In in gravida dui."
+        "Phasellus consequat quam non posuere porttitor. In a velit a augue tristique tincidunt id id sem. Vestibulum vel lacinia odio. Donec eu imperdiet est, non vulputate orci. Cras quis lectus vitae dolor lobortis congue ut in velit. Maecenas fringilla quis libero sit amet dignissim. Sed eleifend lorem a facilisis facilisis. Sed condimentum augue nibh, at volutpat erat viverra id. Proin nec cursus mi. Nulla tincidunt nulla bibendum sapien aliquam tristique."
+        "In luctus facilisis sem nec sagittis. Nullam varius, mi tempus blandit fringilla, ipsum tortor rutrum mauris, vitae fermentum purus quam eu est. Phasellus in leo tincidunt, interdum turpis eget, auctor magna. Morbi felis arcu, pulvinar vel vehicula vel, suscipit condimentum massa. Aliquam non volutpat purus. Cras id odio sem. Cras placerat id sapien a finibus. Donec nec purus eleifend, bibendum tortor sed, venenatis lacus. Curabitur eleifend vehicula elit, a facilisis elit lacinia ac. Sed finibus porta fermentum."
+        "Sed vitae orci neque. Cras id posuere ante. Nullam eleifend nec sapien quis efficitur. Curabitur lacinia elit eros. Cras efficitur mi eu finibus ullamcorper erat curae.\0";
+
+    const char quality_q[1664] =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam porttitor purus in turpis rhoncus, nec euismod nibh rutrum. Duis sodales dapibus metus, in eleifend metus tincidunt in. Aliquam vestibulum leo non sem efficitur hendrerit. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Integer viverra ligula vel dictum aliquet. Nullam auctor imperdiet eros, et euismod dui finibus auctor. Pellentesque in tellus eget leo varius pulvinar. Sed vestibulum risus tortor, sit amet vestibulum dui bibendum at. Vestibulum id ex sed felis mollis ornare eu scelerisque ligula. Pellentesque eu nisi convallis, semper purus sed, venenatis metus. Nunc ac lacus gravida, tincidunt purus quis, mollis dolor. In mollis porta nulla sed blandit. Donec auctor lacus in ipsum ornare, ac placerat lorem mattis. Praesent velit massa, pellentesque vitae arcu eget, imperdiet tempus augue. Quisque ac rutrum lacus, id malesuada lectus."
+        "Suspendisse cursus aliquam tellus dignissim convallis. Ut viverra fermentum nibh vitae tristique. Vivamus diam purus, congue eget odio eu, ornare egestas tortor. Pellentesque tristique metus eu libero varius, eget porttitor quam fermentum. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam mauris justo, elementum ac lacus sit amet, faucibus eleifend sapien. Nunc id orci dignissim, auctor eros eu, tincidunt ante. Nullam pulvinar mauris eu viverra viverra. Aenean rhoncus quis mi nec pulvinar."
+        "Etiam accumsan leo eu nisl pellentesque cursus. Donec at posuere urna. Mauris feugiat et lorem at sodales. Duis sed ultrices erat. Sed faucibus justo elementum dolor fringilla, ac vestibulum libero non.\0";
+
+    const char quality_h[1274] =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec fringilla mattis nulla, ut porta mauris porttitor vitae. Curabitur nec iaculis elit. In at dui fermentum, euismod diam quis, fermentum nisi. Etiam fermentum commodo justo sit amet tincidunt. Pellentesque mauris libero, pellentesque id risus nec, aliquam consequat ante. Maecenas et lorem in dui vulputate viverra. Sed sed rutrum ligula."
+        "Vestibulum feugiat, massa nec ultrices ornare, leo sapien placerat sapien, sit amet vulputate velit tellus ac mauris. Etiam maximus quis dolor vitae vestibulum. Curabitur ornare ante id augue maximus, ut pulvinar ante maximus. In vitae maximus nibh. Cras dapibus odio vitae placerat ultricies. Nulla at justo nunc. Ut at pretium justo."
+        "In sit amet viverra lacus, in semper arcu. Quisque laoreet euismod diam, id mattis massa vehicula a. Sed ultricies porta mi, eu varius ligula luctus sit amet. Nulla sit amet massa ac lacus vestibulum aliquet eget nec nibh. Ut id nulla dictum, finibus urna a, aliquam sem. Curabitur fermentum sapien lorem, sit amet auctor felis posuere et. Fusce fringilla vestibulum orci, eu pretium neque ultricies ac. Phasellus eu ultrices est. Curabitur id eleifend massa. Mauris eu risus posuere, pellentesque velit a, efficitur risus. Cras eros nisi.\0";
+
+    time_t start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, quality_l);
+    time_t end_time = clock();
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 40);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 177);
+    double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, quality_m);
+    end_time = clock();
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 40);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, quality_q);
+    end_time = clock();
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 40);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, quality_h);
+    end_time = clock();
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 40);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(result->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, quality_l);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, quality_m);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, quality_q);
+    assert_null(result);
+}
+
 int main()
 {
     const struct CMUnitTest tests[] = {
@@ -631,7 +878,8 @@ int main()
         cmocka_unit_test(mask_tests),
         cmocka_unit_test(gf256_lookup_generator),
         cmocka_unit_test(error_polynomial_generator),
-        cmocka_unit_test(data_size_calculations)};
+        cmocka_unit_test(data_size_calculations),
+        cmocka_unit_test(input_checks)};
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
