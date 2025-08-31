@@ -4,6 +4,13 @@
 
 #include "qr.h"
 
+#ifdef DEBUG
+char correction_map[] = {'M', 'L', 'H', 'Q', 'A'};
+#define PRINT_DBG(...) printf(__VA_ARGS__)
+#else
+#define PRINT_DBG(...) //
+#endif
+
 #define EVAL_BUFFER_SIZE 64
 
 #define VERSION_OFFSET 1
@@ -52,7 +59,6 @@
 
 enum char_encoding_t
 {
-    NO_DATA = -1,
     BYTE_DATA = 2,
     NUMERIC_DATA = 0,
     ALPHANUMERIC_DATA = 1,
@@ -184,28 +190,11 @@ static inline uint8_t read_bit_stream(struct buffer_t *const buffer)
     return (uint8_t)(~(result * 0xffu));
 }
 
-void qr_free(struct qr_data_t *qr_code)
-{
-    free(qr_code->data);
-    qr_code->data = NULL;
-}
-
-void export_test(const char *const name, const int qr_width, const int bit_offset, const uint8_t *const data)
-{
-    FILE *test = fopen(name, "wb");
-
-    fprintf(test, "P6 %d %d 1\n", qr_width, qr_width);
-    for (int r = 0; r < qr_width; r++)
-    {
-        for (int c = 0; c < qr_width; c++)
-        {
-            uint8_t buffer[3];
-            buffer[0] = buffer[1] = buffer[2] = (data[r * qr_width + c] >> bit_offset) & 0x01u;
-            fwrite(&buffer, 3, 1, test);
-        }
-    }
-    fclose(test);
-}
+// void qr_free(struct qr_data_t *qr_code)
+// {
+//     free(qr_code->data);
+//     qr_code->data = NULL;
+// }
 
 // output:  10 bits for 3 digits
 //           7 bits for 2
@@ -345,8 +334,6 @@ size_t encoding_size(const enum char_encoding_t type, const size_t char_count)
         return (char_count >> 1) * BITS_PER_KANJI_CHAR;
     case ALPHANUMERIC_DATA:
         return (char_count >> 1) * BITS_PER_TWO_ALPHANUMERIC_CHARS + ((char_count & 0x01U) ? BITS_PER_SINGLE_ALPHANUMERIC_CHAR : 0);
-    case NO_DATA:
-        return 0; // Should never happen
     }
     return 0; // Should never happen
 }
@@ -364,7 +351,7 @@ int is_num(const enum char_encoding_t t)
     return NUMERIC_DATA == t;
 }
 
-int is_not_byte(const enum char_encoding_t t)
+int is_num_alpha_kanji(const enum char_encoding_t t)
 {
     return BYTE_DATA != t;
 }
@@ -474,9 +461,9 @@ void calculate_error_codes(const int data_word_count, const int error_word_count
     }
     for (int k = 0; k < error_word_count; ++k)
     {
-        printf("%02x ", error_words[k]);
+        PRINT_DBG("%02x ", error_words[k]);
     }
-    printf("\n");
+    PRINT_DBG("\n");
 }
 
 // See Table 1 of ISO-IEC-18004
@@ -703,7 +690,7 @@ uint8_t parse_input(const char *const input, struct encoding_run_t **list_ptr, s
                 encoding_list = *list_ptr;
                 if (NULL == encoding_list)
                 {
-                    printf("Failed to increase buffer list size\n");
+                    PRINT_DBG("Failed to increase buffer list size\n");
                     return 0;
                 }
             }
@@ -767,23 +754,22 @@ int optimise_input(const uint8_t data_types, const enum error_correction_level_t
         (error_blocks[39][correction_level][1] * error_blocks[39][correction_level][2] + error_blocks[39][correction_level][3] * error_blocks[39][correction_level][4]) << 3};
     while (header_index < 7)
     {
-        if (*module_count < module_limits[header_index])
+
+        *list_size = merge_data(header_sizes[header_index], is_num, ALPHANUMERIC_DATA, encoding_list, *list_size);
+        *list_size = merge_data(header_sizes[header_index], is_num_alpha_kanji, BYTE_DATA, encoding_list, *list_size);
+
+        *module_count = 0;
+        for (size_t j = 0; j < *list_size; ++j)
         {
-            *list_size = merge_data(header_sizes[header_index], is_num, ALPHANUMERIC_DATA, encoding_list, *list_size);
-            *list_size = merge_data(header_sizes[header_index], is_not_byte, BYTE_DATA, encoding_list, *list_size);
-            *module_count = 0;
-            for (size_t j = 0; j < *list_size; ++j)
+            if (encoding_list[j].char_count > 0)
             {
-                if (encoding_list[j].char_count > 0)
-                {
-                    *module_count += header_sizes[header_index][encoding_list[j].type];
-                    *module_count += (int)encoding_size(encoding_list[j].type, encoding_list[j].char_count);
-                }
+                *module_count += header_sizes[header_index][encoding_list[j].type];
+                *module_count += (int)encoding_size(encoding_list[j].type, encoding_list[j].char_count);
             }
-            if (*module_count <= module_limits[header_index])
-            {
-                break;
-            }
+        }
+        if (*module_count <= module_limits[header_index])
+        {
+            break;
         }
         ++header_index;
     }
@@ -874,7 +860,7 @@ void qr_encode_input(const enum code_type_t qr_type, const int version, const en
     {
         qr_capacity = (error_blocks[version][correction_level][1] * error_blocks[version][correction_level][2] + error_blocks[version][correction_level][3] * error_blocks[version][correction_level][4]) << 3;
     }
-    printf("Encoded len check: %d %lu, QR capacity: %d, %d bits unused\n", module_count, (encoder_buffer->byte_index << 3) + (size_t)encoder_buffer->bit_index, qr_capacity, qr_capacity - module_count);
+    PRINT_DBG("Encoded len check: %d %lu, QR capacity: %d, %d bits unused\n", module_count, (encoder_buffer->byte_index << 3) + (size_t)encoder_buffer->bit_index, qr_capacity, qr_capacity - module_count);
 
     // Terminators
     int terminator_length = (QR_SIZE_MICRO == qr_type) ? ((version + 1) << 1) + 1 : 4;
@@ -910,7 +896,7 @@ void GenerateGF256Lookup(uint8_t gf256_lookup[256][2])
     }
     gf256_lookup[1][GF256_LOG] = 0;
     gf256_lookup[255][GF256_ANTILOG] = 0;
-    // for (int i = 0; i< 256; ++i) {printf(" %u %u\n", gf256_lookup[i][0], gf256_lookup[i][1]);}printf("\n");
+    // for (int i = 0; i< 256; ++i) {PRINT_DBG(" %u %u\n", gf256_lookup[i][0], gf256_lookup[i][1]);}PRINT_DBG("\n");
 }
 
 void GenerateErrorPolynomial(const int target_exponent, uint8_t gf256_lookup[256][2], uint8_t *const gen8)
@@ -947,12 +933,12 @@ void qr_error_correction(const enum code_type_t qr_type, const int version, cons
     // int generator_size = generator_exponent + 1;
     int generator_start = (int)(sizeof(generator) - (size_t)generator_exponent - 1);
 
-    printf("Generator exponent: %d (%d terms)\n", generator_exponent, generator_exponent + 1);
+    PRINT_DBG("Generator exponent: %d (%d terms)\n", generator_exponent, generator_exponent + 1);
     for (int i = 0; i <= generator_exponent; ++i)
     {
-        printf("%d ", generator[generator_end - generator_exponent + i]);
+        PRINT_DBG("%d ", generator[generator_end - generator_exponent + i]);
     }
-    printf("\n");
+    PRINT_DBG("\n");
 
     // TEST
     // Input 1-M "HELLO WORLD" (As 1-Q but 6 pad bytes)
@@ -971,21 +957,21 @@ void qr_error_correction(const enum code_type_t qr_type, const int version, cons
     // 148 116 177 212 76 133 75 242 238 76 195 230 189 10 108 240 192 141
     // 235 159 5 173 24 147 59 33 106 40 255 172 82 2 131 32 178 236
 
-    printf("Error codes:\n");
+    PRINT_DBG("Error codes:\n");
 
     {
         size_t block_offset = 0;
         size_t err_offset = 0;
         for (int i = 0; i < block_data[GROUP_1_BLOCK_COUNT]; ++i)
         {
-            printf("Group 1, Block %d ", i + 1);
+            PRINT_DBG("Group 1, Block %d ", i + 1);
             calculate_error_codes(block_data[GROUP_1_BLOCK_SIZE], block_data[ERR_WORDS_PER_BLOCK], (const uint8_t (*const)[2])gf256_lookup, generator_start, generator_end, generator, encoder_buffer->data + block_offset, encoder_buffer->data + data_word_total + err_offset);
             block_offset += (size_t)block_data[GROUP_1_BLOCK_SIZE];
             err_offset += (size_t)block_data[ERR_WORDS_PER_BLOCK];
         }
         for (int i = 0; i < block_data[GROUP_2_BLOCK_COUNT]; ++i)
         {
-            printf("Group 2, Block %d ", i + 1);
+            PRINT_DBG("Group 2, Block %d ", i + 1);
             calculate_error_codes(block_data[GROUP_2_BLOCK_SIZE], block_data[ERR_WORDS_PER_BLOCK], (const uint8_t (*const)[2])gf256_lookup, generator_start, generator_end, generator, encoder_buffer->data + block_offset, encoder_buffer->data + data_word_total + err_offset);
             block_offset += (size_t)block_data[GROUP_2_BLOCK_SIZE];
             err_offset += (size_t)block_data[ERR_WORDS_PER_BLOCK];
@@ -1213,7 +1199,7 @@ void qr_fill(const enum code_type_t qr_type, const int version, const size_t qr_
         int version_offset = (version < BUILD_VERSION_INFO) ? 9 : 12;
         fill_d(&interleaved_buffer, 5, 9, (int)qr_width - version_offset, 1, n - 2, &fill_settings, qr_buffer->data);
         fill_u(&interleaved_buffer, 3, 9, (int)qr_width - version_offset, 1, n - 2, &fill_settings, qr_buffer->data);
-        printf("[%lu:%u] of %lu - %lu bits remaining in buffer, %lu required to fill\n", interleaved_buffer.byte_index, interleaved_buffer.bit_index, interleaved_buffer.size, ((interleaved_buffer.size - interleaved_buffer.byte_index - 1) << 3) + interleaved_buffer.bit_index + 1, (qr_width - (size_t)version_offset - 8) << 1);
+        PRINT_DBG("[%lu:%u] of %lu - %lu bits remaining in buffer, %lu required to fill\n", interleaved_buffer.byte_index, interleaved_buffer.bit_index, interleaved_buffer.size, ((interleaved_buffer.size - interleaved_buffer.byte_index - 1) << 3) + interleaved_buffer.bit_index + 1, (qr_width - (size_t)version_offset - 8) << 1);
         fill_d(&interleaved_buffer, 1, 9, (int)qr_width - version_offset, 1, n - 2, &fill_settings, qr_buffer->data);
     }
 }
@@ -1352,12 +1338,12 @@ uint8_t evaluate_masks(const enum code_type_t qr_type, const size_t qr_width, co
         }
 
         mask_score = mask_eval[0].score.block + mask_eval[0].score.pattern + mask_eval[0].score.ratio + mask_eval[0].score.run;
-        printf("Mask 0: %d (%d %d %d %d)\n", mask_score, mask_eval[0].score.run, mask_eval[0].score.block, mask_eval[0].score.pattern, mask_eval[0].score.ratio);
+        PRINT_DBG("Mask 0: %d (%d %d %d %d)\n", mask_score, mask_eval[0].score.run, mask_eval[0].score.block, mask_eval[0].score.pattern, mask_eval[0].score.ratio);
         mask_pattern_index = 0;
         for (int i = 1; i < 8; ++i)
         {
             int score = mask_eval[i].score.block + mask_eval[i].score.pattern + mask_eval[i].score.ratio + mask_eval[i].score.run;
-            printf("Mask %01x: %d (%d %d %d %d)\n", i, score, mask_eval[i].score.run, mask_eval[i].score.block, mask_eval[i].score.pattern, mask_eval[i].score.ratio);
+            PRINT_DBG("Mask %01x: %d (%d %d %d %d)\n", i, score, mask_eval[i].score.run, mask_eval[i].score.block, mask_eval[i].score.pattern, mask_eval[i].score.ratio);
             if (score < mask_score)
             {
                 mask_score = score;
@@ -1365,7 +1351,7 @@ uint8_t evaluate_masks(const enum code_type_t qr_type, const size_t qr_width, co
             }
         }
     }
-    printf("Mask: %u (%d)\n", mask_pattern_index, mask_score);
+    PRINT_DBG("Mask: %u (%d)\n", mask_pattern_index, mask_score);
     return mask_pattern_index;
 }
 
@@ -1409,7 +1395,7 @@ void qr_add_format(const enum code_type_t qr_type, const int version, const enum
     }
     format |= format_data;
     format ^= (QR_SIZE_MICRO == qr_type) ? MICRO_QR_FORMAT_MASK : QR_FORMAT_MASK;
-    printf("Format/Mask: 0x%04x (15 bits)\n", format);
+    PRINT_DBG("Format/Mask: 0x%04x (15 bits)\n", format);
     if (QR_SIZE_MICRO == qr_type)
     {
         size_t function_offset = qr_width + 8;
@@ -1466,7 +1452,7 @@ void qr_add_version(const int version, const size_t qr_width, struct buffer_t *c
         version_mask >>= 1;
     }
     version_code |= ((uint32_t)version + 1) << 12;
-    printf("Version: 0x%06x (18 bits)\n", version_code);
+    PRINT_DBG("Version: 0x%06x (18 bits)\n", version_code);
     for (size_t i = 0; i < 6; ++i)
     {
         for (size_t j = 0; j < 3; ++j)
@@ -1505,36 +1491,35 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
     int header_index = optimise_input(data_types, correction_level, encoding_list, &list_size, &module_count);
     if (header_index > 6)
     {
-        printf("Error\n");
+        PRINT_DBG("Error optimising input\n");
         free(encoding_list);
         return NULL;
     }
 
     for (size_t i = 0; i < list_size; ++i)
     {
-        printf("%s%lu, ", (BYTE_DATA == encoding_list[i].type) ? "B" : (KANJI_DATA == encoding_list[i].type)      ? "K"
-                                                                   : (ALPHANUMERIC_DATA == encoding_list[i].type) ? "A"
-                                                                                                                  : "N",
-               encoding_list[i].char_count);
+        PRINT_DBG("%s%lu, ", (BYTE_DATA == encoding_list[i].type) ? "B" : (KANJI_DATA == encoding_list[i].type)      ? "K"
+                                                                      : (ALPHANUMERIC_DATA == encoding_list[i].type) ? "A"
+                                                                                                                     : "N",
+                  encoding_list[i].char_count);
     }
-    printf("%d modules\n", module_count);
+    PRINT_DBG("%d modules\n", module_count);
 
     size_t data_word_total = 0;
     size_t error_word_total = 0;
     int version = 39;
     enum code_type_t qr_type = compute_data_word_sizes(correction_level, module_count, header_index, &version, &data_word_total, &error_word_total);
-    char correction_map[] = {'M', 'L', 'H', 'Q'};
-    printf("Version: %d, %s %c, %lu+%lu data+error words\n", version + VERSION_OFFSET, QR_SIZE_STANDARD == qr_type ? "QR" : "MicroQR", correction_map[correction_level], data_word_total, error_word_total);
+    PRINT_DBG("Version: %d, %s %c, %lu+%lu data+error words\n", version + VERSION_OFFSET, QR_SIZE_STANDARD == qr_type ? "QR" : "MicroQR", correction_map[correction_level], data_word_total, error_word_total);
 
     struct buffer_t encoder_buffer = {.bit_index = 0, .byte_index = 0, .size = data_word_total + error_word_total};
     encoder_buffer.data = calloc(encoder_buffer.size, sizeof(uint8_t));
     qr_encode_input(qr_type, version, correction_level, module_count, buffer, encoding_list, list_size, &encoder_buffer);
-    printf("Encoded data: ");
+    PRINT_DBG("Encoded data: ");
     for (size_t i = 0; i < data_word_total; ++i)
     {
-        printf("%02x ", encoder_buffer.data[i]);
+        PRINT_DBG("%02x ", encoder_buffer.data[i]);
     }
-    printf("\n");
+    PRINT_DBG("\n");
 
     // ================================================================
     // Error correction
@@ -1543,7 +1528,7 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
     const int microqr_data[5] = {(int)error_word_total, 1, (int)data_word_total, 0, 0};
     if (QR_SIZE_MICRO == qr_type)
     {
-        printf("Micro QR ");
+        PRINT_DBG("Micro QR ");
         block_data = &microqr_data;
     }
 
@@ -1555,7 +1540,7 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
 
     int alignment_positions[ALIGNMENT_POSITIONS_MAX];
     const int n = compute_alignment_positions(version + VERSION_OFFSET, alignment_positions);
-    printf("Free modules: %d (%d bytes)\n", qr_size(version, n), (qr_size(version, n) + 7) >> 3);
+    PRINT_DBG("Free modules: %d (%d bytes)\n", qr_size(version, n), (qr_size(version, n) + 7) >> 3);
     size_t qr_data_size = ((size_t)qr_size(version, n) + 0x07u) >> 3;
     uint8_t *interleaved_data = calloc(qr_data_size, sizeof(uint8_t));
     if (QR_SIZE_MICRO == qr_type)
@@ -1569,19 +1554,19 @@ struct qr_data_t *qr_encode(const int qr_version, const enum error_correction_le
                 interleaved_data[data_word_total + i] <<= 4;
             }
         }
-        printf("Data: ");
+        PRINT_DBG("Data: ");
     }
     else
     {
         qr_interleave(*block_data, data_word_total, &encoder_buffer, interleaved_data);
-        printf("Interleaved data: ");
+        PRINT_DBG("Interleaved data: ");
     }
 
     for (size_t i = 0; i < data_word_total + error_word_total; ++i)
     {
-        printf("%02x ", interleaved_data[i]);
+        PRINT_DBG("%02x ", interleaved_data[i]);
     }
-    printf("\n");
+    PRINT_DBG("\n");
 
     // ================================================================
     // Build Image
