@@ -19,6 +19,9 @@ endif()
 
 add_library(qr_encoder ${LIB_TYPE})
 set_target_properties(qr_encoder PROPERTIES VERSION ${PROJECT_VERSION} C_STANDARD 17 PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/include/qr.h)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+target_compile_definitions(qr_encoder PRIVATE DEBUG)
+endif()
 
 target_compile_options(qr_encoder PRIVATE ${BASE_COMPILER_OPTIONS} ${PROD_OPTIONS} ${C_OPTIONS})
 target_link_options(qr_encoder PRIVATE ${BASE_LINKER_OPTIONS})
