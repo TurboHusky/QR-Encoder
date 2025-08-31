@@ -91,6 +91,33 @@ static void input_parsing(void **state)
 
 static void input_optimisation(void **state)
 {
+    int index;
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 0);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_L);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_M);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_Q);
+    assert_int_equal(index, 3);
+    index = min_micro_qr_version(NUMERIC_MASK, CORRECTION_LEVEL_H);
+    assert_int_equal(index, 4);
+
+    index = min_micro_qr_version(ALPHANUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(KANJI_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 1);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | KANJI_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+    index = min_micro_qr_version(NUMERIC_MASK | ALPHANUMERIC_MASK | KANJI_MASK | BYTE_MASK, CORRECTION_LEVEL_AUTO);
+    assert_int_equal(index, 2);
+
     int h;
     int module_count = 0;
     {
@@ -99,7 +126,7 @@ static void input_optimisation(void **state)
             {NUMERIC_DATA, 3},
             {NUMERIC_DATA, 0}};
         size_t test_size = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 1);
         assert_int_equal(test_data[1].type, NUMERIC_DATA);
@@ -108,7 +135,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 2);
         assert_int_equal(h, 1);
         test_data[1].char_count = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(module_count, 21);
@@ -121,7 +148,7 @@ static void input_optimisation(void **state)
             {ALPHANUMERIC_DATA, 1},
             {ALPHANUMERIC_DATA, 0}};
         size_t test_size = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, NUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(test_data[1].type, ALPHANUMERIC_DATA);
@@ -130,7 +157,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 2);
         assert_int_equal(h, 1);
         test_data[0].char_count = 2;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 3);
         assert_int_equal(module_count, 21);
@@ -144,7 +171,7 @@ static void input_optimisation(void **state)
             {ALPHANUMERIC_DATA, 1},
             {ALPHANUMERIC_DATA, 0}};
         size_t test_size = 3;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 1);
         assert_int_equal(test_data[1].type, NUMERIC_DATA);
@@ -155,7 +182,7 @@ static void input_optimisation(void **state)
         assert_int_equal(test_size, 3);
         assert_int_equal(h, 2);
         test_data[1].char_count = 6;
-        h = optimise_input(NUMERIC_MASK | ALPHANUMERIC_MASK, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
+        h = optimise_input(1, CORRECTION_LEVEL_L, test_data, &test_size, &module_count);
         assert_int_equal(test_data[0].type, ALPHANUMERIC_DATA);
         assert_int_equal(test_data[0].char_count, 8);
         assert_int_equal(module_count, 50);
@@ -500,7 +527,6 @@ void data_size_calculations(void **state)
     int version;
     size_t data;
     size_t error;
-    const size_t m_qr_data_words[4][4] = {{0, 3, 0, 0}, {4, 5, 0, 0}, {9, 11, 0, 0}, {14, 16, 0, 10}}; // M L H Q
     for (int version_lookup_index = 0; version_lookup_index < 4; ++version_lookup_index)
     {
         for (int correction_level = 0; correction_level < 4; ++correction_level)
@@ -508,7 +534,7 @@ void data_size_calculations(void **state)
             enum code_type_t type = compute_data_word_sizes(correction_level, 0, version_lookup_index, &version, &data, &error);
             assert_int_equal(type, QR_SIZE_MICRO);
             assert_int_equal(version, version_lookup_index);
-            assert_int_equal(data, m_qr_data_words[version][correction_level]);
+            assert_int_equal(data, (micro_module_capacities[version][correction_level] + 4) >> 3);
             assert_int_equal(error, micro_error_words[version][correction_level]);
         }
     }
@@ -618,6 +644,155 @@ void data_size_calculations(void **state)
     }
 }
 
+void input_checks(void **state)
+{
+    const char *const input = "12345";
+    struct qr_data_t *result;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, -1, VERSION_AUTO,  input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, 5, VERSION_AUTO, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, 5, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, -1, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, 41, input);
+    assert_null(result);
+    
+    const char *const micro2 = "ABCDE";
+    const char *const micro3 = "abcde";
+    const char *const micro4 = "abcdefghijklm";
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_NONE);
+    assert_int_equal(result->width, 11);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro2);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro3);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 15);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, micro4);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_NONE);
+    assert_int_equal(result->width, 11);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 2);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 13);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 4);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 17);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_null(result);
+    result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_MICRO);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 15);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_L, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_M, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_Q, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_H, VERSION_AUTO, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 1);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(result->width, 21);
+    result = qr_encode(QR_SIZE_STANDARD, CORRECTION_LEVEL_AUTO, 3, input);
+    assert_non_null(result);
+    assert_int_equal(result->type, QR_SIZE_STANDARD);
+    assert_int_equal(result->version, 3);
+    assert_int_equal(result->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(result->width, 29);
+    free(result);
+    result = NULL;
+}
+
 int main()
 {
     const struct CMUnitTest tests[] = {
@@ -631,7 +806,8 @@ int main()
         cmocka_unit_test(mask_tests),
         cmocka_unit_test(gf256_lookup_generator),
         cmocka_unit_test(error_polynomial_generator),
-        cmocka_unit_test(data_size_calculations)};
+        cmocka_unit_test(data_size_calculations),
+        cmocka_unit_test(input_checks)};
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "qr.h"
 
+#define BAD_VALUE -1
+
 struct user_params_t
 {
     int version;
@@ -18,18 +20,18 @@ int parse_version(const char *const input)
     {
         return input[0] - '0';
     }
-    else if (2 == input_size && input[0] >= '0' && input[0] <= '9' && input[1] >= '0' && input[1] <= '9')
+    else if (2 == input_size && input[0] >= '0' && input[0] <= '4' && input[1] >= '0' && input[1] <= '9')
     {
         return 10 * (input[0] - '0') + input[1] - '0';
     }
-    return VERSION_AUTO;
+    return BAD_VALUE;
 }
 
 int parse_qr_input(const int argc, const char *const *const argv, struct user_params_t *user_settings)
 {
     user_settings->code_type = QR_SIZE_STANDARD;
     user_settings->version = VERSION_AUTO;
-    user_settings->correction_level = CORRECTION_LEVEL_M;
+    user_settings->correction_level = CORRECTION_LEVEL_AUTO;
 
     if (argc < 2)
     {
@@ -37,7 +39,7 @@ int parse_qr_input(const int argc, const char *const *const argv, struct user_pa
         return EXIT_FAILURE;
     }
 
-    for (int i = 1; i < argc; ++i)
+    for (int i = 1; i < argc - 1; ++i)
     {
         size_t arg_size = strlen(argv[i]);
         if ('-' == argv[i][0])
@@ -49,42 +51,42 @@ int parse_qr_input(const int argc, const char *const *const argv, struct user_pa
             }
             if ((3 == arg_size && 0 == strncmp(argv[i], "--h", 3)) || (6 == arg_size && 0 == strncmp(argv[i], "--help", 6)))
             {
-                printf("Usage: qr [--version] [-lLmMqQhH] [-h | --help] SOURCE\n\n\t--h,--help\tPrint help\n\t--version\tForce version to M1-M4 or 1-40\n\t-l,-L\t\terror correction 7%%\n\t-m,-M\t\terror correction 15%%\n\t-q,-Q\t\terror correction 25%%\n\t-h,-H\t\terror correction 30%%\n");
+                printf("Usage: qr [--auto|--micro] [--version] [-lLmMqQhH] SOURCE\n\n"
+                       "\t--h,--help\tPrint help\n"
+                       "\t--auto\t\tAllow micro QR codes\n"
+                       "\t--micro\t\tGenerate micro QR code\n"
+                       "\t--version\tQR version to generate\n"
+                       "\t\t\tNot compatible with '--auto' option\n"
+                       "\t-l,-L\t\terror correction 7%%\n"
+                       "\t-m,-M\t\terror correction 15%%\n"
+                       "\t-q,-Q\t\terror correction 25%%\n"
+                       "\t-h,-H\t\terror correction 30%%\n");
                 return EXIT_FAILURE;
+            }
+            if (6 == arg_size && 0 == strncmp(argv[i], "--auto", 6))
+            {
+                user_settings->code_type = QR_SIZE_AUTO;
+                continue;
+            }
+            if (7 == arg_size && 0 == strncmp(argv[i], "--micro", 7))
+            {
+                user_settings->code_type = QR_SIZE_MICRO;
+                continue;
             }
             if (9 == arg_size && 0 == strncmp(argv[i], "--version", 9))
             {
-                const char *version_string;
-                if (9 == arg_size)
+                ++i;
+                if (i >= (argc - 1))
                 {
-                    ++i;
-                    if (i >= (argc - 1))
-                    {
-                        printf("Missing version argument\n");
-                        return EXIT_FAILURE;
-                    }
-                    version_string = argv[i];
-                }
-                else if (arg_size > 10 && '=' == argv[i][9])
-                {
-                    version_string = argv[i] + 10;
-                }
-                else
-                {
-                    printf("Invalid version argument\n");
+                    printf("Missing version argument\n");
                     return EXIT_FAILURE;
                 }
-                if ('M' == version_string[0])
+                user_settings->version = parse_version(argv[i]);
+                if (BAD_VALUE == user_settings->version)
                 {
-                    if (1 == strlen(version_string))
-                    {
-                        printf("Incomplete version argument\n");
-                        return EXIT_FAILURE;
-                    }
-                    user_settings->code_type = QR_SIZE_MICRO;
-                    ++version_string;
+                    printf("Invalid version\n");
+                    return EXIT_FAILURE;
                 }
-                user_settings->version = parse_version(version_string);
                 continue;
             }
             switch (argv[i][1])
@@ -95,6 +97,7 @@ int parse_qr_input(const int argc, const char *const *const argv, struct user_pa
                 break;
             case 'm':
             case 'M':
+                user_settings->correction_level = CORRECTION_LEVEL_M;
                 break;
             case 'q':
             case 'Q':
@@ -166,7 +169,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    struct qr_data_t *qr_code = qr_encode(params.version, params.correction_level, params.code_type, argv[argc - 1]);
+    struct qr_data_t *qr_code = qr_encode(params.code_type, params.correction_level, params.version, argv[argc - 1]);
     if (qr_code != NULL)
     {
         export_as_ppm(qr_code->width, qr_code->data);
