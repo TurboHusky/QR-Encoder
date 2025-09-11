@@ -14,8 +14,7 @@ char correction_map[] = {'M', 'L', 'H', 'Q', 'A'};
 #define EVAL_BUFFER_SIZE 64
 
 #define VERSION_OFFSET 1
-#define VERSION_MIN 0
-#define VERSION_MAX 39
+#define VERSION_MIN 1
 #define VERSION_MODULE_TOTAL 36
 #define BUILD_VERSION_INFO 6
 #define GF256_ANTILOG 0
@@ -32,7 +31,7 @@ char correction_map[] = {'M', 'L', 'H', 'Q', 'A'};
 #define ALIGNMENT_POSITIONS_MAX 7
 #define ALIGNMENT_PATTERN_OFFSET 2
 #define ALIGNMENT_PATTERN_WIDTH 5
-#define TIMING_ROW 6
+#define TIMING_PATTERN_OFFSET 6
 
 #define EVAL_PATTERN_MASK 0x07ffu
 #define EVAL_PATTERN_LEFT 0x07a2u
@@ -43,9 +42,7 @@ char correction_map[] = {'M', 'L', 'H', 'Q', 'A'};
 #define BCH_GENERATOR 0x0537u
 #define GOLAY_GENERATOR 0x1f25u
 
-#define BLOCK_TYPE_BIT_COUNT 4
-#define CHAR_COUNT_LOW_LIMIT 9
-#define CHAR_COUNT_UPPER_LIMIT 26
+#define ENCODING_TYPE_COUNT 4
 
 #define BITS_PER_KANJI_CHAR 13
 #define BITS_PER_THREE_NUMERIC_CHARS 10
@@ -59,9 +56,9 @@ char correction_map[] = {'M', 'L', 'H', 'Q', 'A'};
 
 enum char_encoding_t
 {
-    BYTE_DATA = 2,
     NUMERIC_DATA = 0,
     ALPHANUMERIC_DATA = 1,
+    BYTE_DATA = 2,
     KANJI_DATA = 3
 };
 
@@ -97,8 +94,10 @@ struct fill_settings_t
     uint8_t masks[12][12];
 };
 
+const uint8_t char_encoding_masks[ENCODING_TYPE_COUNT] = {NUMERIC_MASK, ALPHANUMERIC_MASK, BYTE_MASK, KANJI_MASK};
+
 // order matches char_encoding_t
-const int header_sizes[7][4] = {
+const int header_sizes[7][ENCODING_TYPE_COUNT] = {
     {3, 0, 0, 0},
     {5, 4, 0, 0},
     {7, 6, 6, 5},
@@ -344,19 +343,7 @@ struct encoding_run_t
     size_t char_count;
 };
 
-typedef int (*cmp_t)(const enum char_encoding_t t);
-
-int is_num(const enum char_encoding_t t)
-{
-    return NUMERIC_DATA == t;
-}
-
-int is_num_alpha_kanji(const enum char_encoding_t t)
-{
-    return BYTE_DATA != t;
-}
-
-size_t merge_data(const int header_bit_count[4], const cmp_t can_merge, const enum char_encoding_t merge_target, struct encoding_run_t *const list, const size_t list_size)
+size_t merge_data(const int header_bit_count[ENCODING_TYPE_COUNT], const int masks, const enum char_encoding_t merge_target, struct encoding_run_t *const list, const size_t list_size)
 {
     if (list_size < 2)
     {
@@ -366,7 +353,7 @@ size_t merge_data(const int header_bit_count[4], const cmp_t can_merge, const en
     size_t end = 1;
     while (end < list_size)
     {
-        if (can_merge(list[index].type) && (list[end].type == merge_target))
+        if ((0 != (char_encoding_masks[list[index].type] & masks)) && (list[end].type == merge_target))
         {
             const size_t cost = encoding_size(merge_target, list[index].char_count);
             size_t new_cost = (size_t)header_bit_count[list[index].type] + encoding_size(list[index].type, list[index].char_count);
@@ -378,7 +365,7 @@ size_t merge_data(const int header_bit_count[4], const cmp_t can_merge, const en
                 continue;
             }
         }
-        else if (can_merge(list[end].type) && (list[index].type == merge_target))
+        else if ((0 != (char_encoding_masks[list[end].type] & masks)) && (list[index].type == merge_target))
         {
             const size_t cost = encoding_size(merge_target, list[end].char_count);
             size_t new_cost = (size_t)header_bit_count[list[end].type] + encoding_size(list[end].type, list[end].char_count);
@@ -469,7 +456,7 @@ void calculate_error_codes(const int data_word_count, const int error_word_count
 // See Table 1 of ISO-IEC-18004
 int compute_alignment_positions(const int version, int *const coords) // version 1-40
 {
-    if (version <= VERSION_MIN + VERSION_OFFSET)
+    if (version <= VERSION_MIN)
     {
         return 0;
     }
@@ -671,12 +658,11 @@ uint8_t parse_input(const char *const input, struct encoding_run_t **list_ptr, s
     uint8_t data_types = 0;
     size_t run = 0;
     size_t char_count = 0;
-    uint8_t data_masks[] = {NUMERIC_MASK, ALPHANUMERIC_MASK, BYTE_MASK, KANJI_MASK};
     enum char_encoding_t type = input_type(input[char_count], input[char_count + 1]);
     while (input[char_count] != '\0')
     {
         enum char_encoding_t new_type = input_type(input[char_count], input[char_count + 1]);
-        data_types |= data_masks[new_type];
+        data_types |= char_encoding_masks[new_type];
         if (new_type == type)
         {
             ++run;
@@ -766,8 +752,8 @@ int optimise_input(const int micro_version, const enum error_correction_level_t 
         (error_blocks[39][correction_level][1] * error_blocks[39][correction_level][2] + error_blocks[39][correction_level][3] * error_blocks[39][correction_level][4]) << 3};
     while (header_index < 7)
     {
-        *list_size = merge_data(header_sizes[header_index], is_num, ALPHANUMERIC_DATA, encoding_list, *list_size);
-        *list_size = merge_data(header_sizes[header_index], is_num_alpha_kanji, BYTE_DATA, encoding_list, *list_size);
+        *list_size = merge_data(header_sizes[header_index], NUMERIC_MASK, ALPHANUMERIC_DATA, encoding_list, *list_size);
+        *list_size = merge_data(header_sizes[header_index], NUMERIC_MASK | ALPHANUMERIC_MASK | KANJI_MASK, BYTE_DATA, encoding_list, *list_size);
 
         *module_count = 0;
         for (size_t j = 0; j < *list_size; ++j)
@@ -823,7 +809,7 @@ enum code_type_t compute_data_word_sizes(const enum error_correction_level_t cor
 void qr_encode_input(const enum code_type_t qr_type, const int version, const enum error_correction_level_t correction_level, const int module_count, const char *const buffer, const struct encoding_run_t *const final_list, const size_t list_size, struct buffer_t *const encoder_buffer)
 {
     typedef void (*encoder_t)(const struct buffer_t, struct buffer_t *const);
-    encoder_t encoders[4] = {encode_numeric, encode_alphanumeric, encode_byte, encode_kanji};
+    encoder_t encoders[ENCODING_TYPE_COUNT] = {encode_numeric, encode_alphanumeric, encode_byte, encode_kanji};
     size_t offset = 0;
     for (size_t i = 0; i < list_size; ++i)
     {
@@ -831,13 +817,13 @@ void qr_encode_input(const enum code_type_t qr_type, const int version, const en
         {
             if (QR_SIZE_MICRO == qr_type)
             {
-                uint16_t count_indicator_lengths[4][4] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}}; // Char count indicators
+                uint16_t count_indicator_lengths[4][ENCODING_TYPE_COUNT] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}}; // Char count indicators
                 add_to_buffer((uint16_t)final_list[i].type, version, encoder_buffer);                              // Mode indicator (N/A for M1)
                 add_to_buffer((uint16_t)final_list[i].char_count, count_indicator_lengths[version][final_list[i].type], encoder_buffer);
             }
             else
             {
-                int count_indicator_lengths[4] = {10, 9, 8, 8};
+                int count_indicator_lengths[ENCODING_TYPE_COUNT] = {10, 9, 8, 8};
                 int bitcount = count_indicator_lengths[final_list[i].type];
                 if (version >= 9)
                 {
@@ -1033,7 +1019,7 @@ void qr_setup(const enum code_type_t qr_type, const size_t qr_width, const int n
     // Alignment Patterns
     if (QR_SIZE_STANDARD == qr_type)
     {
-        const uint8_t alignment_pattern[5] = {0xe0u, 0xeeu, 0xeau, 0xeeu, 0xe0u};
+        const uint8_t alignment_pattern[ALIGNMENT_PATTERN_WIDTH] = {0xe0u, 0xeeu, 0xeau, 0xeeu, 0xe0u};
         for (int grid_x = 0; grid_x < n; ++grid_x)
         {
             for (int grid_y = 0; grid_y < n; ++grid_y)
@@ -1043,9 +1029,9 @@ void qr_setup(const enum code_type_t qr_type, const size_t qr_width, const int n
                     continue;
                 }
                 size_t alignment_offset = qr_width * (size_t)(alignment_positions[grid_y] - 2) + (size_t)alignment_positions[grid_x] - 2;
-                for (int row = 0; row < 5; ++row)
+                for (int row = 0; row < ALIGNMENT_PATTERN_WIDTH; ++row)
                 {
-                    for (size_t col = 0; col < 5; ++col)
+                    for (size_t col = 0; col < ALIGNMENT_PATTERN_WIDTH; ++col)
                     {
                         qr_buffer->data[alignment_offset + col] = ((alignment_pattern[row] >> col) & 1) * 0xffu;
                     }
@@ -1092,13 +1078,12 @@ void qr_setup(const enum code_type_t qr_type, const size_t qr_width, const int n
     }
     if (QR_SIZE_STANDARD == qr_type)
     {
-        size_t timing_pattern_offset = 6;
-        size_t row_offset = qr_width * timing_pattern_offset;
+        size_t row_offset = qr_width * TIMING_PATTERN_OFFSET;
         for (size_t i = 8; i < qr_width - 8; ++i)
         {
             uint8_t val = (i & 1) * 0xffu;
             qr_buffer->data[row_offset + i] = val;
-            qr_buffer->data[i * qr_width + timing_pattern_offset] = val;
+            qr_buffer->data[i * qr_width + TIMING_PATTERN_OFFSET] = val;
         }
     }
 }
