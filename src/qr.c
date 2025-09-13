@@ -1459,32 +1459,32 @@ void qr_add_version(const int version, const size_t qr_width, struct buffer_t *c
     }
 }
 
-struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_correction_level_t qr_correction_level, const int qr_version, const char *const buffer)
+enum encoding_status_t qr_encode(enum code_type_t qr_code_type, const enum error_correction_level_t qr_correction_level, const int qr_version, const char *const input_data, struct qr_data_t **qr_code)
 {
-    if (buffer[0] == '\0')
+    if (input_data[0] == '\0')
     {
         PRINT_DBG("Empty input\n");
-        return NULL;
+        return QR_ENC_NO_INPUT_DATA;
     }
     if (qr_correction_level < 0 || qr_correction_level > 4)
     {
         PRINT_DBG("Invalid QR correction level\n");
-        return NULL;
+        return QR_ENC_INVALID_CORRECTION_LEVEL_SPECIFIED;
     }
     if (qr_code_type < 0 || qr_code_type > 2)
     {
         PRINT_DBG("Invalid QR code type\n");
-        return NULL;
+        return QR_ENC_INVALID_CODE_TYPE_SPECIFIED;
     }
     if (qr_version < VERSION_AUTO || (QR_SIZE_MICRO == qr_code_type && qr_version > 4) || (QR_SIZE_MICRO != qr_code_type && qr_version > 40))
     {
         PRINT_DBG("Invalid QR version\n");
-        return NULL;
+        return QR_ENC_INVALID_VERSION_SPECIFIED;
     }
     if (QR_SIZE_AUTO == qr_code_type && VERSION_AUTO != qr_version)
     {
         PRINT_DBG("Version specified with no QR type\n");
-        return NULL;
+        return QR_ENC_VERSION_REQUIRES_QR_TYPE;
     }
 
     // ================================================================
@@ -1494,11 +1494,11 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
     size_t list_capacity = EVAL_BUFFER_SIZE;
     struct encoding_run_t *encoding_list = (struct encoding_run_t *)malloc(list_capacity * sizeof(struct encoding_run_t));
     size_t list_size = 0;
-    uint8_t data_types = parse_input(buffer, &encoding_list, &list_capacity, &list_size);
+    uint8_t data_types = parse_input(input_data, &encoding_list, &list_capacity, &list_size);
     if (data_types == 0)
     {
         free(encoding_list);
-        return NULL;
+        return QR_ENC_INPUT_PARSING_FAILED;
     }
     int module_count = 0;
     int micro_version = (QR_SIZE_STANDARD == qr_code_type) ? 4 : min_micro_qr_version(data_types, qr_correction_level);
@@ -1508,7 +1508,7 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
     {
         PRINT_DBG("Error optimising input\n");
         free(encoding_list);
-        return NULL;
+        return QR_ENC_DATA_EXCEEDS_QR_CAPACITY;
     }
     if (QR_SIZE_MICRO == qr_code_type)
     {
@@ -1516,7 +1516,7 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
         {
             PRINT_DBG("Cannot generate Micro QR\n");
             free(encoding_list);
-            return NULL;
+            return QR_ENC_DATA_EXCEEDS_MICRO_QR_CAPACITY;
         }
     }
     if (QR_SIZE_STANDARD != qr_code_type && 0 == version_index)
@@ -1544,7 +1544,7 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
         {
             PRINT_DBG("Minimum version exceeded\n");
             free(encoding_list);
-            return NULL;
+            return (QR_SIZE_STANDARD == qr_code_type) ? QR_ENC_DATA_EXCEEDS_QR_CAPACITY : QR_ENC_DATA_EXCEEDS_MICRO_QR_CAPACITY;
         }
         version = qr_version - VERSION_OFFSET;
         if (QR_SIZE_MICRO == code_type)
@@ -1567,7 +1567,7 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
 
     struct buffer_t encoder_buffer = {.bit_index = 0, .byte_index = 0, .size = data_word_total + error_word_total};
     encoder_buffer.data = calloc(encoder_buffer.size, sizeof(uint8_t));
-    qr_encode_input(code_type, version, correction_level, module_count, buffer, encoding_list, list_size, &encoder_buffer);
+    qr_encode_input(code_type, version, correction_level, module_count, input_data, encoding_list, list_size, &encoder_buffer);
     PRINT_DBG("Encoded data: ");
     for (size_t i = 0; i < data_word_total; ++i)
     {
@@ -1649,16 +1649,18 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
 
     size_t output_struct_size = sizeof(struct qr_data_t);
     size_t output_data_size = (size_t)(qr_width * qr_width + 0x07) >> 3;
-    void *output_buffer = calloc(output_struct_size + output_data_size, sizeof(uint8_t));
-    struct qr_data_t *qr_code = (struct qr_data_t *)output_buffer;
-    qr_code->type = code_type;
-    qr_code->version = version + VERSION_OFFSET;
-    qr_code->err_level = (QR_SIZE_MICRO == code_type && 0 == version) ? CORRECTION_LEVEL_NONE : correction_level;
-    qr_code->width = (int)qr_width;
-    qr_code->mask = mask_pattern_index;
-    qr_code->data = (uint8_t *)output_buffer + output_struct_size;
+    struct qr_data_t *qr_code_builder = *qr_code;
+    free(qr_code_builder);
+    qr_code_builder = calloc(output_struct_size + output_data_size, sizeof(uint8_t));
+    qr_code_builder->type = code_type;
+    qr_code_builder->version = version + VERSION_OFFSET;
+    qr_code_builder->err_level = (QR_SIZE_MICRO == code_type && 0 == version) ? CORRECTION_LEVEL_NONE : correction_level;
+    qr_code_builder->width = (int)qr_width;
+    qr_code_builder->mask = mask_pattern_index;
+    qr_code_builder->data = (uint8_t *)qr_code_builder + output_struct_size;
+    *qr_code = qr_code_builder;
 
-    struct buffer_t output_builder = {.bit_index = 0, .byte_index = 0, .data = qr_code->data};
+    struct buffer_t output_builder = {.bit_index = 0, .byte_index = 0, .data = qr_code_builder->data};
     for (size_t i = 0; i < qr_width * qr_width; ++i)
     {
         if (output_builder.bit_index > 7)
@@ -1674,5 +1676,5 @@ struct qr_data_t *qr_encode(enum code_type_t qr_code_type, const enum error_corr
     free(interleaved_data);
     free(encoder_buffer.data);
     free(encoding_list);
-    return qr_code;
+    return QR_ENC_NO_ERROR;
 }

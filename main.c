@@ -122,6 +122,40 @@ int parse_qr_input(const int argc, const char *const *const argv, struct user_pa
     return EXIT_SUCCESS;
 }
 
+void print_status(enum encoding_status_t status)
+{
+    switch (status)
+    {
+    case QR_ENC_NO_ERROR:
+        printf("QR code generated successfully\n");
+        break;
+    case QR_ENC_NO_INPUT_DATA:
+        printf("No input data provided\n");
+        break;
+    case QR_ENC_INVALID_CORRECTION_LEVEL_SPECIFIED:
+        printf("Invalid correction level specified\n");
+        break;
+    case QR_ENC_INVALID_CODE_TYPE_SPECIFIED:
+        printf("Invalid code type specified\n");
+        break;
+    case QR_ENC_INVALID_VERSION_SPECIFIED:
+        printf("Invalid version specified\n");
+        break;
+    case QR_ENC_VERSION_REQUIRES_QR_TYPE:
+        printf("QR code type required when specifying version\n");
+        break;
+    case QR_ENC_INPUT_PARSING_FAILED:
+        printf("Input parsing failed\n");
+        break;
+    case QR_ENC_DATA_EXCEEDS_QR_CAPACITY:
+        printf("Input data exceeds capacity for QR code\n");
+        break;
+    case QR_ENC_DATA_EXCEEDS_MICRO_QR_CAPACITY:
+        printf("Input data exceeds capacity for Micro QR code\n");
+        break;
+    }
+}
+
 void export_as_ppm(const int qr_width, const uint8_t *const data)
 {
     FILE *test_output;
@@ -168,8 +202,10 @@ int main(int argc, char **argv)
     {
         return EXIT_FAILURE;
     }
-
-    struct qr_data_t *qr_code = qr_encode(params.code_type, params.correction_level, params.version, argv[argc - 1]);
+    
+    struct qr_data_t *qr_code = NULL;
+    enum encoding_status_t status = qr_encode(params.code_type, params.correction_level, params.version, argv[argc - 1], &qr_code);
+    print_status(status);
     if (qr_code != NULL)
     {
         export_as_ppm(qr_code->width, qr_code->data);
