@@ -818,7 +818,7 @@ void qr_encode_input(const enum code_type_t qr_type, const int version, const en
             if (QR_SIZE_MICRO == qr_type)
             {
                 uint16_t count_indicator_lengths[4][ENCODING_TYPE_COUNT] = {{3, 0, 0, 0}, {4, 3, 0, 0}, {5, 4, 4, 3}, {6, 5, 5, 4}}; // Char count indicators
-                add_to_buffer((uint16_t)final_list[i].type, version, encoder_buffer);                              // Mode indicator (N/A for M1)
+                add_to_buffer((uint16_t)final_list[i].type, version, encoder_buffer);                                                // Mode indicator (N/A for M1)
                 add_to_buffer((uint16_t)final_list[i].char_count, count_indicator_lengths[version][final_list[i].type], encoder_buffer);
             }
             else
@@ -1485,6 +1485,24 @@ enum encoding_status_t qr_encode(enum code_type_t qr_code_type, const enum error
     {
         PRINT_DBG("Version specified with no QR type\n");
         return QR_ENC_VERSION_REQUIRES_QR_TYPE;
+    }
+    if (QR_SIZE_MICRO == qr_code_type)
+    {
+        if (CORRECTION_LEVEL_H == qr_correction_level)
+        {
+            PRINT_DBG("Unsupported correction level for micro QR\n");
+            return QR_ENC_INVALID_MICRO_QR_CORRECTION_LEVEL;
+        }
+        if (1 == qr_version && CORRECTION_LEVEL_AUTO != qr_correction_level)
+        {
+            PRINT_DBG("Unsupported correction level for micro QR version 1\n");
+            return QR_ENC_INVALID_MICRO_QR_CORRECTION_LEVEL;
+        }
+        if ((2 == qr_version || 3 == qr_version) && CORRECTION_LEVEL_Q == qr_correction_level)
+        {
+            PRINT_DBG("Unsupported correction level for micro QR version %d\n", qr_version);
+            return QR_ENC_INVALID_MICRO_QR_CORRECTION_LEVEL;
+        }
     }
 
     // ================================================================

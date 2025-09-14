@@ -141,6 +141,9 @@ void print_status(enum encoding_status_t status)
     case QR_ENC_INVALID_VERSION_SPECIFIED:
         printf("Invalid version specified\n");
         break;
+    case QR_ENC_INVALID_MICRO_QR_CORRECTION_LEVEL:
+        printf("Invalid MicroQR settings specified\n");
+        break;
     case QR_ENC_VERSION_REQUIRES_QR_TYPE:
         printf("QR code type required when specifying version\n");
         break;
@@ -202,7 +205,7 @@ int main(int argc, char **argv)
     {
         return EXIT_FAILURE;
     }
-    
+
     struct qr_data_t *qr_code = NULL;
     enum encoding_status_t status = qr_encode(params.code_type, params.correction_level, params.version, argv[argc - 1], &qr_code);
     print_status(status);
