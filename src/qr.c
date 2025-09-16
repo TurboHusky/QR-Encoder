@@ -330,7 +330,7 @@ size_t encoding_size(const enum char_encoding_t type, const size_t char_count)
     case BYTE_DATA:
         return char_count << 3;
     case KANJI_DATA:
-        return (char_count >> 1) * BITS_PER_KANJI_CHAR;
+        return char_count * BITS_PER_KANJI_CHAR;
     case ALPHANUMERIC_DATA:
         return (char_count >> 1) * BITS_PER_TWO_ALPHANUMERIC_CHARS + ((char_count & 0x01U) ? BITS_PER_SINGLE_ALPHANUMERIC_CHAR : 0);
     }

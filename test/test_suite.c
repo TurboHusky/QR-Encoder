@@ -645,7 +645,7 @@ void data_size_calculations(void **state)
     }
 }
 
-void input_checks(void **state)
+void parameter_checks(void **state)
 {
     const char *const input = "12345";
     enum encoding_status_t result;
@@ -711,11 +711,11 @@ void input_checks(void **state)
     result = qr_encode(QR_SIZE_MICRO, CORRECTION_LEVEL_H, VERSION_AUTO, input, &qr_code);
     assert_int_equal(result, QR_ENC_INVALID_MICRO_QR_CORRECTION_LEVEL);
     assert_null(qr_code);
-    
+
     const char *const micro2 = "ABCDE";
     const char *const micro3 = "abcde";
     const char *const micro4 = "abcdefghijklm";
-    
+
     result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_AUTO, VERSION_AUTO, input, &qr_code);
     assert_int_equal(result, QR_ENC_NO_ERROR);
     assert_non_null(qr_code);
@@ -902,6 +902,67 @@ void input_checks(void **state)
     const char *const h_invalid = &test_data[1680];
     const char *const h_valid = &test_data[1681];
 
+    char test_data_numeric[7091];
+    for (int i = 0; i < 7090; ++i)
+    {
+        test_data_numeric[i] = rand() % (10) + 48;
+    }
+    test_data_numeric[7090] = '\0';
+    const char *const l_invalid_numeric = &test_data_numeric[0];
+    const char *const l_valid_numeric = &test_data_numeric[1];
+    const char *const m_invalid_numeric = &test_data_numeric[1493];
+    const char *const m_valid_numeric = &test_data_numeric[1494];
+    const char *const q_invalid_numeric = &test_data_numeric[3096];
+    const char *const q_valid_numeric = &test_data_numeric[3097];
+    const char *const h_invalid_numeric = &test_data_numeric[4032];
+    const char *const h_valid_numeric = &test_data_numeric[4033];
+
+    char test_data_alphanumeric[4298];
+    for (int i = 0; i < 4297; ++i)
+    {
+        test_data_alphanumeric[i] = rand() % (26) + 'A';
+    }
+    test_data_alphanumeric[4297] = '\0';
+    const char *const l_invalid_alphanumeric = &test_data_alphanumeric[0];
+    const char *const l_valid_alphanumeric = &test_data_alphanumeric[1];
+    const char *const m_invalid_alphanumeric = &test_data_alphanumeric[905];
+    const char *const m_valid_alphanumeric = &test_data_alphanumeric[906];
+    const char *const q_invalid_alphanumeric = &test_data_alphanumeric[1876];
+    const char *const q_valid_alphanumeric = &test_data_alphanumeric[1877];
+    const char *const h_invalid_alphanumeric = &test_data_alphanumeric[2444];
+    const char *const h_valid_alphanumeric = &test_data_alphanumeric[2445];
+
+    uint8_t test_data_kanji[3637];
+    for (int i = 0; i < 1818 * 2; i += 2)
+    {
+        test_data_kanji[i] = rand() % (42) + 0x81;
+        if (test_data_kanji[i] > 0x9F)
+        {
+            test_data_kanji[i] += 0x40;
+        }
+        if (0 == test_data_kanji[i] & 0x01)
+        {
+            test_data_kanji[i + 1] = rand() % (0x5E) + 0x40;
+            if (test_data_kanji[i + 1] > 0x7E)
+            {
+                ++test_data_kanji[i + 1];
+            }
+        }
+        else
+        {
+            test_data_kanji[i + 1] = rand() % (0x5E) + 0x9F;
+        }
+    }
+    test_data_kanji[3636] = '\0';
+    const char *const l_invalid_kanji = &test_data_kanji[0];
+    const char *const l_valid_kanji = &test_data_kanji[2];
+    const char *const m_invalid_kanji = &test_data_kanji[764];
+    const char *const m_valid_kanji = &test_data_kanji[766];
+    const char *const q_invalid_kanji = &test_data_kanji[1586];
+    const char *const q_valid_kanji = &test_data_kanji[1588];
+    const char *const h_invalid_kanji = &test_data_kanji[2066];
+    const char *const h_valid_kanji = &test_data_kanji[2068];
+
     // Max capacity tests
     result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_invalid, &qr_code);
     assert_null(qr_code);
@@ -959,6 +1020,177 @@ void input_checks(void **state)
     assert_in_range(elapsed_time, 0, 0.015);
     free(qr_code);
     qr_code = NULL;
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_invalid_numeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_valid_numeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_invalid_numeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_valid_numeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_invalid_numeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_valid_numeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_invalid_numeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_valid_numeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_invalid_alphanumeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_valid_alphanumeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_invalid_alphanumeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_valid_alphanumeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_invalid_alphanumeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_valid_alphanumeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_invalid_alphanumeric, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_valid_alphanumeric, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_invalid_kanji, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_L, VERSION_AUTO, l_valid_kanji, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_L);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_invalid_kanji, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_M, VERSION_AUTO, m_valid_kanji, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_M);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_invalid_kanji, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_Q, VERSION_AUTO, q_valid_kanji, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_Q);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_invalid_kanji, &qr_code);
+    assert_null(qr_code);
+    start_time = clock();
+    result = qr_encode(QR_SIZE_AUTO, CORRECTION_LEVEL_H, VERSION_AUTO, h_valid_kanji, &qr_code);
+    end_time = clock();
+    assert_non_null(qr_code);
+    assert_int_equal(qr_code->type, QR_SIZE_STANDARD);
+    assert_int_equal(qr_code->version, 40);
+    assert_int_equal(qr_code->err_level, CORRECTION_LEVEL_H);
+    assert_int_equal(qr_code->width, 177);
+    elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    assert_in_range(elapsed_time, 0, 0.015);
+    free(qr_code);
+    qr_code = NULL;
 }
 
 int main()
@@ -975,7 +1207,7 @@ int main()
         cmocka_unit_test(gf256_lookup_generator),
         cmocka_unit_test(error_polynomial_generator),
         cmocka_unit_test(data_size_calculations),
-        cmocka_unit_test(input_checks)};
+        cmocka_unit_test(parameter_checks)};
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
